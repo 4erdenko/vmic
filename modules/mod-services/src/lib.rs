@@ -111,7 +111,12 @@ fn parse_systemctl_line(line: &str) -> Result<ServiceInfo> {
         anyhow::bail!("ignored");
     }
 
-    let mut parts = trimmed.split_whitespace();
+    let sanitized = trimmed
+        .strip_prefix('●')
+        .map(|rest| rest.trim_start())
+        .unwrap_or(trimmed);
+
+    let mut parts = sanitized.split_whitespace();
     let unit = parts
         .next()
         .ok_or_else(|| anyhow::anyhow!("missing unit"))?;
@@ -155,6 +160,16 @@ mod tests {
         assert_eq!(info.load, "loaded");
         assert_eq!(info.active, "active");
         assert!(info.description.contains("Regular"));
+    }
+
+    #[test]
+    fn parse_systemctl_line_ignores_failed_bullet() {
+        let line = "● fail2ban.service loaded failed failed Fail2Ban Service";
+        let info = parse_systemctl_line(line).expect("parsed service");
+        assert_eq!(info.unit, "fail2ban.service");
+        assert_eq!(info.load, "loaded");
+        assert_eq!(info.active, "failed");
+        assert_eq!(info.sub, "failed");
     }
 
     #[test]
