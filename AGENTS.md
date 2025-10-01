@@ -37,3 +37,7 @@
 - Respond to users in the same language they use in their initial message.
 - Every feature or fix must include accompanying tests that verify the behavior.
 - After any change, run formatters and linters; resolve errors and flag contentious warnings or fix straightforward ones before completion.
+
+- Cross-check progress against `ARCHITECTURE.md` after each change; mark completed/ongoing items there.
+- Propose and record any new scope additions in `ARCHITECTURE.md` before implementation.
+
