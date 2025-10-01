@@ -9,6 +9,7 @@ pub use vmic_sdk::{CollectionContext as Context, SectionStatus};
 #[derive(Debug, Serialize)]
 pub struct ReportMetadata {
     pub generated_at: String,
+    pub sections: usize,
 }
 
 #[derive(Debug, Serialize)]
@@ -24,8 +25,13 @@ impl Report {
             .map(|d| d.as_secs().to_string())
             .unwrap_or_else(|_| "0".to_string());
 
+        let count = sections.len();
+
         Self {
-            metadata: ReportMetadata { generated_at },
+            metadata: ReportMetadata {
+                generated_at,
+                sections: count,
+            },
             sections,
         }
     }
@@ -34,6 +40,7 @@ impl Report {
         serde_json::json!({
             "metadata": {
                 "generated_at": self.metadata.generated_at,
+                "sections": self.metadata.sections,
             },
             "sections": self.sections,
         })
@@ -103,6 +110,7 @@ mod tests {
                 .iter()
                 .all(|s| !matches!(s.status, SectionStatus::Error))
         );
+        assert_eq!(report.metadata.sections, report.sections.len());
     }
 
     #[test]
@@ -111,5 +119,6 @@ mod tests {
         let report = collect_report(&ctx);
         let md = report.to_markdown().expect("markdown render");
         assert!(md.contains("# System Report"));
+        assert!(md.contains("Total sections:"));
     }
 }

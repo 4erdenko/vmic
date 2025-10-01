@@ -9,7 +9,9 @@ repository.workspace = true
 [dependencies]
 anyhow.workspace = true
 serde_json.workspace = true
+serde.workspace = true
 vmic-sdk = { path = "../../vmic-sdk" }
+chrono.workspace = true
 
 [lints]
 workspace = true

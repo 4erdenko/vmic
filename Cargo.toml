@@ -28,6 +28,7 @@ inventory = "0.3.21"
 procfs = "0.18.0"
 etc-os-release = "0.1.1"
 rustix = { version = "1.0.8", features = ["fs", "system"] }
+chrono = { version = "0.4.42", default-features = false, features = ["clock"] }
 
 [workspace.lints.rust]
 unsafe_code = "forbid"

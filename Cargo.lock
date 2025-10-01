@@ -855,6 +855,7 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "bollard",
+ "serde",
  "serde_json",
  "tokio",
  "vmic-sdk",
@@ -865,6 +866,8 @@ name = "mod-journal"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "chrono",
+ "serde",
  "serde_json",
  "vmic-sdk",
 ]

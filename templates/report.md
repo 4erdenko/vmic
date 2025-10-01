@@ -1,6 +1,7 @@
 # System Report
 
 Generated at: {{ report.metadata.generated_at }}
+Total sections: {{ report.metadata.sections }}
 
 {% for section in report.sections %}
 ## {{ section.title }}
