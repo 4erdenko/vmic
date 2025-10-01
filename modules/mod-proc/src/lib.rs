@@ -9,13 +9,13 @@ impl Collector for ProcCollector {
     fn metadata(&self) -> CollectorMetadata {
         CollectorMetadata {
             id: "proc",
-            title: "Процессы и ресурсы",
-            description: "Обзор /proc: нагрузка и память",
+            title: "Processes and Resources",
+            description: "Overview of /proc: load and memory",
         }
     }
 
     fn collect(&self, _ctx: &CollectionContext) -> Result<Section> {
-        let snapshot = build_snapshot().context("не удалось получить показатели /proc")?;
+        let snapshot = build_snapshot().context("failed to read /proc metrics")?;
         Ok(section_from_snapshot(&snapshot))
     }
 }
@@ -69,7 +69,7 @@ fn section_from_snapshot(snapshot: &ProcSnapshot) -> Section {
         }
     });
 
-    let mut section = Section::success("proc", "Процессы и ресурсы", body);
+    let mut section = Section::success("proc", "Processes and Resources", body);
     section.summary = Some(snapshot.summary());
     section
 }
@@ -78,7 +78,7 @@ impl ProcSnapshot {
     fn summary(&self) -> String {
         match self.loadavg {
             Some((one, _, _)) => format!("LoadAvg 1m: {:.2}", one),
-            None => "LoadAvg недоступен".to_string(),
+            None => "LoadAvg unavailable".to_string(),
         }
     }
 }

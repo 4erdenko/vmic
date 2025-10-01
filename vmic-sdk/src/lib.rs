@@ -2,7 +2,7 @@ use anyhow::Result;
 use serde::Serialize;
 use std::fmt;
 
-/// Контекст сбора данных; будет расширяться параметрами окружения.
+/// Data collection context; can be extended with environment parameters.
 #[derive(Debug, Default, Clone)]
 pub struct CollectionContext {
     _private: (),
@@ -14,7 +14,7 @@ impl CollectionContext {
     }
 }
 
-/// Метаданные о коллекторе: используются при рендеринге и логировании.
+/// Collector metadata used for rendering and logging.
 #[derive(Debug, Clone, Copy)]
 pub struct CollectorMetadata {
     pub id: &'static str,
@@ -22,7 +22,7 @@ pub struct CollectorMetadata {
     pub description: &'static str,
 }
 
-/// Состояние секции, чтобы отличать успешный сбор от деградации.
+/// Section status describing success or degraded collection.
 #[derive(Debug, Serialize)]
 #[serde(rename_all = "snake_case")]
 pub enum SectionStatus {
@@ -42,7 +42,7 @@ impl fmt::Display for SectionStatus {
     }
 }
 
-/// Результат работы коллектора.
+/// Result produced by a collector.
 #[derive(Debug, Serialize)]
 pub struct Section {
     pub id: &'static str,
@@ -97,13 +97,13 @@ impl Section {
     }
 }
 
-/// Общий интерфейс для модулей сбора данных.
+/// Common interface for data collection modules.
 pub trait Collector: Send + Sync + 'static {
     fn metadata(&self) -> CollectorMetadata;
     fn collect(&self, ctx: &CollectionContext) -> Result<Section>;
 }
 
-/// Описание регистрационной записи для compile-time реестра.
+/// Descriptor of a compile-time registry entry.
 pub struct CollectorRegistration {
     pub constructor: fn() -> Box<dyn Collector>,
 }
@@ -112,7 +112,7 @@ inventory::collect!(CollectorRegistration);
 
 pub use inventory;
 
-/// Хелпер для регистрации коллектора в модуле.
+/// Helper macro to register a collector inside a module.
 #[macro_export]
 macro_rules! register_collector {
     ($ctor:expr) => {

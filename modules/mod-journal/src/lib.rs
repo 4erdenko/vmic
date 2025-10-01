@@ -9,7 +9,7 @@ impl Collector for JournalCollector {
         CollectorMetadata {
             id: "journal",
             title: "systemd journal",
-            description: "Последние события из journald",
+            description: "Recent events from journald",
         }
     }
 
@@ -22,7 +22,7 @@ impl Collector for JournalCollector {
         Ok(Section::degraded(
             "journal",
             "systemd journal",
-            "Чтение журнала ещё не реализовано".to_string(),
+            "Journal retrieval is not implemented yet".to_string(),
             body,
         ))
     }

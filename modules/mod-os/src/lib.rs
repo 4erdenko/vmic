@@ -12,13 +12,13 @@ impl Collector for OsCollector {
     fn metadata(&self) -> CollectorMetadata {
         CollectorMetadata {
             id: "os",
-            title: "Операционная система",
-            description: "Сведения из /etc/os-release и uname",
+            title: "Operating System",
+            description: "Information from /etc/os-release and uname",
         }
     }
 
     fn collect(&self, _ctx: &CollectionContext) -> Result<Section> {
-        let snapshot = build_snapshot().context("не удалось собрать сведения об ОС")?;
+        let snapshot = build_snapshot().context("failed to collect OS details")?;
         Ok(section_from_snapshot(&snapshot))
     }
 }
@@ -42,7 +42,7 @@ struct OsSnapshot {
 }
 
 fn build_snapshot() -> Result<OsSnapshot> {
-    let os = OsRelease::open().context("не удалось открыть /etc/os-release")?;
+    let os = OsRelease::open().context("failed to open /etc/os-release")?;
     let uname = uname();
 
     Ok(OsSnapshot {
@@ -84,7 +84,7 @@ fn section_from_snapshot(snapshot: &OsSnapshot) -> Section {
         }
     });
 
-    let mut section = Section::success("os", "Операционная система", body);
+    let mut section = Section::success("os", "Operating System", body);
     section.summary = Some(snapshot.summary());
     section
 }

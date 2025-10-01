@@ -85,7 +85,7 @@ mod tests {
     use super::*;
     use vmic_sdk::SectionStatus;
 
-    // Подключаем модули, чтобы они зарегистрировали свои коллекторы.
+    // Link modules so their collectors register during tests.
     use mod_docker as _;
     use mod_journal as _;
     use mod_os as _;
@@ -110,6 +110,6 @@ mod tests {
         let ctx = Context::new();
         let report = collect_report(&ctx);
         let md = report.to_markdown().expect("markdown render");
-        assert!(md.contains("# Системный отчёт"));
+        assert!(md.contains("# System Report"));
     }
 }

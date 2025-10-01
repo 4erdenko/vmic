@@ -8,8 +8,8 @@ impl Collector for DockerCollector {
     fn metadata(&self) -> CollectorMetadata {
         CollectorMetadata {
             id: "docker",
-            title: "Контейнеры Docker",
-            description: "Состояние Docker Engine и контейнеров",
+            title: "Docker Containers",
+            description: "Docker Engine and container status",
         }
     }
 
@@ -17,14 +17,14 @@ impl Collector for DockerCollector {
         #[cfg(feature = "client")]
         {
             let body = json!({
-                "engine": "недоступно",
+                "engine": "unavailable",
                 "containers": Vec::<serde_json::Value>::new(),
             });
 
             return Ok(Section::degraded(
                 "docker",
-                "Контейнеры Docker",
-                "Интеграция с Docker ещё не реализована".to_string(),
+                "Docker Containers",
+                "Docker integration is not implemented yet".to_string(),
                 body,
             ));
         }
@@ -37,8 +37,8 @@ impl Collector for DockerCollector {
 
             Ok(Section::degraded(
                 "docker",
-                "Контейнеры Docker",
-                "Фича docker отключена или зависимости недоступны".to_string(),
+                "Docker Containers",
+                "Docker feature is disabled or dependencies are unavailable".to_string(),
                 body,
             ))
         }

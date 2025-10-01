@@ -1,11 +1,11 @@
-# Системный отчёт
+# System Report
 
-Сгенерирован: {{ report.metadata.generated_at }}
+Generated at: {{ report.metadata.generated_at }}
 
 {% for section in report.sections %}
 ## {{ section.title }}
 
-Статус: `{{ section.status }}`
+Status: `{{ section.status }}`
 
 {% if let Some(summary) = section.summary %}
 > {{ summary }}
@@ -16,7 +16,7 @@
 ```
 
 {% if section.has_notes() %}
-**Примечания**
+**Notes**
 {% for note in section.notes %}- {{ note }}
 {% endfor %}
 {% endif %}

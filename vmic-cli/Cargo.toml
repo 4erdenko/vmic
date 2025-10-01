@@ -17,7 +17,7 @@ mod-journal = { path = "../modules/mod-journal", optional = true }
 mod-docker = { path = "../modules/mod-docker", default-features = false, features = ["client"] }
 
 [features]
-default = []
+default = ["journal"]
 journal = ["mod-journal"]
 
 [lints]

@@ -2,7 +2,7 @@ use anyhow::Result;
 use clap::{Parser, ValueEnum};
 use vmic_core::{Context, collect_report};
 
-// Обязательные модули подключаем, чтобы регистрация прошла на этапе линковки.
+// Ensure mandatory modules are linked so their collectors register.
 use mod_os as _;
 use mod_proc as _;
 
