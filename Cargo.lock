@@ -873,6 +873,17 @@ dependencies = [
 ]
 
 [[package]]
+name = "mod-network"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "procfs",
+ "serde",
+ "serde_json",
+ "vmic-sdk",
+]
+
+[[package]]
 name = "mod-os"
 version = "0.1.0"
 dependencies = [
@@ -889,6 +900,17 @@ version = "0.1.0"
 dependencies = [
  "anyhow",
  "procfs",
+ "serde_json",
+ "vmic-sdk",
+]
+
+[[package]]
+name = "mod-storage"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "rustix",
+ "serde",
  "serde_json",
  "vmic-sdk",
 ]
@@ -1424,8 +1446,10 @@ dependencies = [
  "clap",
  "mod-docker",
  "mod-journal",
+ "mod-network",
  "mod-os",
  "mod-proc",
+ "mod-storage",
  "serde_json",
  "vmic-core",
 ]

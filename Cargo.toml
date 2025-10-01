@@ -8,6 +8,8 @@ members = [
   "modules/mod-proc",
   "modules/mod-journal",
   "modules/mod-docker",
+  "modules/mod-storage",
+  "modules/mod-network",
 ]
 default-members = ["vmic-cli"]
 

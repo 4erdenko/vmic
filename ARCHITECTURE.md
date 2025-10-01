@@ -37,8 +37,8 @@ VMIC is a modular Rust tool that produces human- and machine-readable system rep
 | `mod-users` | `/etc/passwd`, groups, shadow analysis | ⏳ |
 | `mod-cron` | cron tabs, system timers | ⏳ |
 | `mod-services` | init/systemd unit discovery (`systemctl`/D-Bus) | ⏳ |
-| `mod-network` | interfaces, sockets, listening ports | ⏳ |
-| `mod-storage` | mounts, usage, heavy directories | ⏳ |
+| `mod-network` | interfaces, sockets, listening ports | ✅ implemented (procfs `/proc/net`) |
+| `mod-storage` | mounts, usage, heavy directories | ✅ implemented (statvfs, /proc/mounts) |
 | `mod-sar` | sysstat historical metrics (feature) | ⏳ |
 | `mod-containers` | Podman/containerd (feature; e.g., `podman`, `containerd`) | ⏳ |
 | Security posture | sudoers, sshd_config, cgroups v2 | 💤 future optional |

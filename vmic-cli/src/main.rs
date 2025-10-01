@@ -10,6 +10,8 @@ use mod_proc as _;
 use mod_journal as _;
 
 use mod_docker as _;
+use mod_network as _;
+use mod_storage as _;
 
 #[derive(Parser, Debug)]
 #[command(
