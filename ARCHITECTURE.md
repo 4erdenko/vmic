@@ -1,5 +1,7 @@
 # VMIC Architecture Plan (Consolidated)
 
+VMIC is a modular Rust tool that produces human- and machine-readable system reports from Linux hosts. It ships as a single statically linked binary built against musl, collects data via compile-time registered modules (OS, /proc, journald, Docker, and planned extensions), and renders Markdown/JSON outputs for operators.
+
 **Legend:** ✅ completed · ⚙️ in progress · ⏳ planned · 💤 deferred
 
 ## 1. Goals and Principles
