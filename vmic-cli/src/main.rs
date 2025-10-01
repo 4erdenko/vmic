@@ -9,9 +9,14 @@ use mod_proc as _;
 #[cfg(feature = "journal")]
 use mod_journal as _;
 
+use mod_containers as _;
+use mod_cron as _;
 use mod_docker as _;
 use mod_network as _;
+use mod_sar as _;
+use mod_services as _;
 use mod_storage as _;
+use mod_users as _;
 
 #[derive(Parser, Debug)]
 #[command(

@@ -8,6 +8,11 @@ members = [
   "modules/mod-proc",
   "modules/mod-journal",
   "modules/mod-docker",
+  "modules/mod-users",
+  "modules/mod-cron",
+  "modules/mod-services",
+  "modules/mod-sar",
+  "modules/mod-containers",
   "modules/mod-storage",
   "modules/mod-network",
 ]
