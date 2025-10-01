@@ -1,0 +1,28 @@
+[package]
+name = "vmic"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+clap.workspace = true
+serde_json.workspace = true
+vmic-core = { path = "../vmic-core" }
+mod-os = { path = "../modules/mod-os" }
+mod-proc = { path = "../modules/mod-proc" }
+mod-journal = { path = "../modules/mod-journal", optional = true }
+mod-docker = { path = "../modules/mod-docker", default-features = false, features = ["client"] }
+
+[features]
+default = []
+journal = ["mod-journal"]
+
+[lints]
+workspace = true
+
+[[bin]]
+name = "vmic"
+path = "src/main.rs"

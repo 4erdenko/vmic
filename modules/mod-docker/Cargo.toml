@@ -1,0 +1,21 @@
+[package]
+name = "mod-docker"
+version = "0.1.0"
+edition.workspace = true
+rust-version.workspace = true
+license.workspace = true
+repository.workspace = true
+
+[dependencies]
+anyhow.workspace = true
+serde_json.workspace = true
+vmic-sdk = { path = "../../vmic-sdk" }
+tokio = { version = "1.47.1", features = ["rt-multi-thread", "macros"], optional = true }
+bollard = { version = "0.19.2", optional = true }
+
+[features]
+default = []
+client = ["tokio", "bollard"]
+
+[lints]
+workspace = true
