@@ -1,7 +1,7 @@
 use anyhow::Result;
 use chrono::{DateTime, Utc};
 use serde::Serialize;
-use std::time::{SystemTime, UNIX_EPOCH};
+use std::time::{Instant, SystemTime, UNIX_EPOCH};
 use vmic_sdk::{self, CollectionContext, Section};
 
 use crate::health::{HealthDigest, build_health_digest};
@@ -88,15 +88,16 @@ fn collect_sections(ctx: &CollectionContext) -> Vec<Section> {
     for entry in vmic_sdk::iter_registered_collectors() {
         let collector = (entry.constructor)();
         let metadata = collector.metadata();
+        let start = Instant::now();
+        let result = collector.collect(ctx);
+        let elapsed_ms = start.elapsed().as_millis() as u64;
 
-        match collector.collect(ctx) {
-            Ok(section) => sections.push(section),
-            Err(error) => sections.push(Section::error(
-                metadata.id,
-                metadata.title,
-                error.to_string(),
-            )),
-        }
+        let mut section = match result {
+            Ok(section) => section,
+            Err(error) => Section::error(metadata.id, metadata.title, error.to_string()),
+        };
+        section.duration_ms = Some(elapsed_ms);
+        sections.push(section);
     }
 
     sections
@@ -503,15 +504,18 @@ mod render {
         lists: Vec<ListView>,
         paragraph: Option<String>,
         json_preview: Option<String>,
+        duration_label: String,
         has_key_values: bool,
         has_tables: bool,
         has_lists: bool,
         has_notes: bool,
         has_json_preview: bool,
+        has_duration: bool,
     }
 
     impl SectionView {
         fn new(section: &super::Section) -> Self {
+            let duration_label = format_duration(section.duration_ms).unwrap_or_default();
             Self {
                 id: section.id.to_string(),
                 title: section.title.to_string(),
@@ -524,11 +528,13 @@ mod render {
                 lists: Vec::new(),
                 paragraph: None,
                 json_preview: None,
+                duration_label,
                 has_key_values: false,
                 has_tables: false,
                 has_lists: false,
                 has_notes: !section.notes.is_empty(),
                 has_json_preview: false,
+                has_duration: section.duration_ms.is_some(),
             }
         }
 
@@ -558,6 +564,7 @@ mod render {
             self.has_lists = !self.lists.is_empty();
             self.has_notes = !self.notes.is_empty();
             self.has_json_preview = self.json_preview.is_some();
+            self.has_duration = !self.duration_label.is_empty();
         }
     }
 
@@ -1634,6 +1641,18 @@ mod render {
 
     fn format_percent(ratio: f64) -> String {
         format!("{:.1}%", ratio * 100.0)
+    }
+
+    fn format_duration(duration_ms: Option<u64>) -> Option<String> {
+        duration_ms.map(|ms| {
+            if ms >= 10_000 {
+                format!("{:.1}s", ms as f64 / 1000.0)
+            } else if ms >= 1000 {
+                format!("{:.2}s", ms as f64 / 1000.0)
+            } else {
+                format!("{} ms", ms)
+            }
+        })
     }
 
     fn summarize_value(value: &Value) -> String {

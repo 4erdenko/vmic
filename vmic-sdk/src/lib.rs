@@ -65,6 +65,7 @@ pub struct Section {
     pub summary: Option<String>,
     pub body: serde_json::Value,
     pub notes: Vec<String>,
+    pub duration_ms: Option<u64>,
 }
 
 impl Section {
@@ -76,6 +77,7 @@ impl Section {
             summary: None,
             body,
             notes: Vec::new(),
+            duration_ms: None,
         }
     }
 
@@ -92,6 +94,7 @@ impl Section {
             summary: Some(summary),
             body,
             notes: Vec::new(),
+            duration_ms: None,
         }
     }
 
@@ -103,6 +106,7 @@ impl Section {
             summary: Some(error.clone()),
             body: serde_json::json!({ "error": error }),
             notes: Vec::new(),
+            duration_ms: None,
         }
     }
 

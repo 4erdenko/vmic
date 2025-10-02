@@ -101,6 +101,11 @@
         "summary": {
           "type": "string"
         },
+        "duration_ms": {
+          "type": ["integer", "null"],
+          "minimum": 0,
+          "description": "Collector execution time in milliseconds"
+        },
         "body": {
           "type": "object",
           "description": "Arbitrary structured data captured by the collector.",
