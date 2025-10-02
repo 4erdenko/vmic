@@ -14,7 +14,7 @@ If no options are provided the tool prints a Markdown report to stdout.
 
 | Option | Description |
 | --- | --- |
-| `--format <fmt>[,<fmt>...]` | One or more formats to generate. Accepted values: `markdown`, `json`, `html`. Defaults to `markdown`. Repeat the flag or provide a comma-separated list to emit multiple formats in one run. When multiple formats are requested, or when HTML is requested, the results are written to files. |
+| `--format <fmt>[,<fmt>...]` (alias `--formats`) | One or more formats to generate. Accepted values: `markdown`, `json`, `html`. Defaults to `markdown`. Repeat the flag or provide a comma-separated list to emit multiple formats in one run. When multiple formats are requested, or when HTML is requested, the results are written to files. |
 | `--output-dir <PATH>` | Directory where file outputs are stored. Defaults to the current working directory for formats that need files (`html` or multi-format runs). The directory is created if it does not exist. |
 
 ### Format behaviour

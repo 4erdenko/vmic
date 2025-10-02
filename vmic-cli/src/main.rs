@@ -32,7 +32,13 @@ use mod_users as _;
 )]
 struct Cli {
     /// Output formats to generate (repeat or use comma-separated values)
-    #[arg(long, value_enum, value_delimiter = ',', default_value = "markdown")]
+    #[arg(
+        long = "format",
+        visible_alias = "formats",
+        value_enum,
+        value_delimiter = ',',
+        default_value = "markdown"
+    )]
     formats: Vec<OutputFormat>,
 
     /// Directory to write generated artifacts (defaults to current directory for file outputs)
