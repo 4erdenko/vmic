@@ -31,9 +31,17 @@ use mod_users as _;
     author = "VMIC Team"
 )]
 struct Cli {
-    /// Output format: markdown, json, or html
-    #[arg(long, value_enum, default_value_t = OutputFormat::Markdown)]
-    format: OutputFormat,
+    /// Output formats to generate (repeat or use comma-separated values)
+    #[arg(long, value_enum, value_delimiter = ',', default_value = "markdown")]
+    formats: Vec<OutputFormat>,
+
+    /// Directory to write generated artifacts (defaults to current directory for file outputs)
+    #[arg(long, value_name = "PATH")]
+    output_dir: Option<PathBuf>,
+
+    /// Limit collections to data since the given timestamp or duration (passed to collectors)
+    #[arg(long, value_name = "SINCE")]
+    since: Option<String>,
 
     /// Warn when any disk usage exceeds this percentage (default 90)
     #[arg(long, value_name = "PERCENT")]
@@ -59,44 +67,118 @@ enum OutputFormat {
     Html,
 }
 
+impl OutputFormat {
+    fn file_extension(&self) -> &'static str {
+        match self {
+            OutputFormat::Markdown => "md",
+            OutputFormat::Json => "json",
+            OutputFormat::Html => "html",
+        }
+    }
+
+    fn display_name(&self) -> &'static str {
+        match self {
+            OutputFormat::Markdown => "Markdown",
+            OutputFormat::Json => "JSON",
+            OutputFormat::Html => "HTML",
+        }
+    }
+}
+
 fn main() -> Result<()> {
     let cli = Cli::parse();
     let thresholds = load_thresholds(&cli)?;
-    let context = Context::new();
+    let mut context = Context::new();
+    context.set_since(cli.since.clone());
     let report = collect_report_with_digest(&context, thresholds);
 
-    match cli.format {
-        OutputFormat::Markdown => {
-            let rendered = report.to_markdown()?;
-            println!("{}", rendered);
-        }
-        OutputFormat::Json => {
-            let payload = report.to_json_value();
-            println!("{}", serde_json::to_string_pretty(&payload)?);
-        }
-        OutputFormat::Html => {
-            let rendered = report.to_html()?;
-            let timestamp = report
-                .metadata
-                .generated_at_utc()
-                .unwrap_or_else(|| Utc::now());
-            let file_name = format!(
-                "vmic-report-{}.html",
-                timestamp.format("%Y-%m-%dT%H-%M-%SZ")
-            );
-            let path = html_output_path(&file_name)?;
-            fs::write(&path, rendered)?;
-            println!("HTML report written to {}", path.display());
+    let formats = if cli.formats.is_empty() {
+        vec![OutputFormat::Markdown]
+    } else {
+        cli.formats.clone()
+    };
+
+    let multi_output = formats.len() > 1;
+    let explicit_dir = cli.output_dir.is_some();
+    let needs_dir = formats
+        .iter()
+        .any(|format| format_requires_file(format, multi_output, explicit_dir));
+
+    let output_dir = if needs_dir {
+        let dir = match &cli.output_dir {
+            Some(path) => path.clone(),
+            None => env::current_dir()?,
+        };
+        fs::create_dir_all(&dir)?;
+        Some(dir)
+    } else {
+        None
+    };
+
+    let timestamp = report
+        .metadata
+        .generated_at_utc()
+        .unwrap_or_else(|| Utc::now());
+    let base_name = format!("vmic-report-{}", timestamp.format("%Y-%m-%dT%H-%M-%SZ"));
+
+    for format in formats {
+        match format {
+            OutputFormat::Markdown => {
+                let rendered = report.to_markdown()?;
+                if format_requires_file(&format, multi_output, explicit_dir) {
+                    let dir = output_dir
+                        .as_ref()
+                        .expect("output directory available for markdown");
+                    let path = dir.join(format!("{}.{}", base_name, format.file_extension()));
+                    fs::write(&path, rendered)?;
+                    println!(
+                        "{} report written to {}",
+                        format.display_name(),
+                        path.display()
+                    );
+                } else {
+                    println!("{}", rendered);
+                }
+            }
+            OutputFormat::Json => {
+                let payload = report.to_json_value();
+                let rendered = serde_json::to_string_pretty(&payload)?;
+                if format_requires_file(&format, multi_output, explicit_dir) {
+                    let dir = output_dir
+                        .as_ref()
+                        .expect("output directory available for json");
+                    let path = dir.join(format!("{}.{}", base_name, format.file_extension()));
+                    fs::write(&path, rendered)?;
+                    println!(
+                        "{} report written to {}",
+                        format.display_name(),
+                        path.display()
+                    );
+                } else {
+                    println!("{}", rendered);
+                }
+            }
+            OutputFormat::Html => {
+                let rendered = report.to_html()?;
+                let dir = output_dir
+                    .as_ref()
+                    .expect("output directory available for html");
+                let path = dir.join(format!("{}.{}", base_name, format.file_extension()));
+                fs::write(&path, rendered)?;
+                println!(
+                    "{} report written to {}",
+                    format.display_name(),
+                    path.display()
+                );
+            }
         }
     }
 
     Ok(())
 }
 
-fn html_output_path(file_name: &str) -> Result<PathBuf> {
-    let mut dir = env::current_dir()?;
-    dir.push(file_name);
-    Ok(dir)
+fn format_requires_file(format: &OutputFormat, multi: bool, explicit_dir: bool) -> bool {
+    matches!(format, OutputFormat::Html) || explicit_dir || multi
 }
 
 fn load_thresholds(cli: &Cli) -> Result<DigestThresholds> {

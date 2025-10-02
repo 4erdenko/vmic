@@ -20,12 +20,12 @@ VMIC is a modular Rust tool that produces human- and machine-readable system rep
 
 ## 4. Core Runtime & Rendering
 - ✅ Markdown rendering (Askama) and JSON serialization with metadata (timestamp, section count); Askama configured via crate-local `askama.toml`; JSON schema formalization is still pending.
-- ⚙️ HTML renderer available via `--format html` (writes timestamped HTML file); extended CLI flags like `--since` remain.
+- ⚙️ HTML renderer available via `--format html` (writes timestamped HTML file); further rendering enhancements (e.g., additional templates) remain open.
 
 ## 5. Command-Line Interface
 - ✅ Clap-based CLI with Markdown/JSON modes; default build enables `journal` & `docker` modules while retaining feature flags for extensibility (`journal`, `docker`, module-specific feature toggles like `mod-docker/client`).
 - ✅ Builds default to the musl target with `crt-static` via `.cargo/config.toml`.
-- ⚙️ Added `--format html` for file-based HTML output; remaining flags (`--since`, dual-format emission, configurable output path) pending.
+- ✅ Added multi-format support (`--format` accepts repeated values), file output directory control (`--output-dir`), and relative time filtering via `--since`.
 
 ## 6. Modules
 | Module | Scope | Status |
@@ -47,7 +47,7 @@ VMIC is a modular Rust tool that produces human- and machine-readable system rep
 - ✅ Introduced a centralized "Critical Health Digest" in `vmic-core` that aggregates high-severity findings from all sections.
 - ✅ Digest surfaces section errors/degradations automatically and flags module-specific alerts (e.g., disk usage >90%, low memory) using explicit rules.
 - ✅ Exposed digest at the top of JSON/Markdown/HTML outputs with succinct severity badges.
-- ⚙️ Allow operators to tune digest thresholds via CLI flags/env (
+- ✅ Allow operators to tune digest thresholds via CLI flags/env (
   - `storage.disk_warning`/`storage.disk_critical` usage ratios, default 90%/95%
   - `memory.warning`/`memory.critical` available-memory ratios, default 10%/5%
   ) while keeping sensible defaults documented.

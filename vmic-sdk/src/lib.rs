@@ -5,12 +5,26 @@ use std::fmt;
 /// Data collection context; can be extended with environment parameters.
 #[derive(Debug, Default, Clone)]
 pub struct CollectionContext {
-    _private: (),
+    since: Option<String>,
 }
 
 impl CollectionContext {
     pub fn new() -> Self {
-        Self { _private: () }
+        Self::default()
+    }
+
+    pub fn with_since<S: Into<String>>(since: S) -> Self {
+        Self {
+            since: Some(since.into()),
+        }
+    }
+
+    pub fn set_since<S: Into<String>>(&mut self, since: Option<S>) {
+        self.since = since.map(|value| value.into());
+    }
+
+    pub fn since(&self) -> Option<&str> {
+        self.since.as_deref()
     }
 }
 

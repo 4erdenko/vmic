@@ -20,8 +20,8 @@ impl Collector for JournalCollector {
         }
     }
 
-    fn collect(&self, _ctx: &CollectionContext) -> Result<Section> {
-        match gather_entries() {
+    fn collect(&self, ctx: &CollectionContext) -> Result<Section> {
+        match gather_entries(ctx) {
             Ok(entries) => {
                 let body = json!({
                     "source": "journalctl --output=json",
@@ -70,14 +70,19 @@ struct JournalEntry {
     message: String,
 }
 
-fn gather_entries() -> Result<Vec<JournalEntry>> {
-    let output = Command::new("journalctl")
+fn gather_entries(ctx: &CollectionContext) -> Result<Vec<JournalEntry>> {
+    let mut command = Command::new("journalctl");
+    command
         .arg("--output=json")
         .arg("--no-pager")
         .arg("-n")
-        .arg(JOURNAL_LINES)
-        .output()
-        .context("failed to execute journalctl")?;
+        .arg(JOURNAL_LINES);
+
+    if let Some(since) = ctx.since() {
+        command.arg("--since").arg(since);
+    }
+
+    let output = command.output().context("failed to execute journalctl")?;
 
     if !output.status.success() {
         return Err(anyhow!(
