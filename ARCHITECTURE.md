@@ -41,7 +41,7 @@ VMIC is a modular Rust tool that produces human- and machine-readable system rep
 | `mod-storage` | mounts, usage, heavy directories | ✅ operational vs pseudo FS split, inode tracking, Docker usage, heavy directory/log hotspots |
 | `mod-sar` | sysstat historical metrics (feature) | ✅ implemented (CPU averages) |
 | `mod-containers` | Podman/containerd (feature; e.g., `podman`, `containerd`) | ✅ implemented (runtime detection) |
-| Security posture | sudoers, sshd_config, cgroups v2 | 💤 future optional |
+| Security posture | sudoers, sshd_config, cgroups v2 | ✅ baseline checks implemented |
 
 ## 6.1 Cross-Module Health Digest
 - ✅ Introduced a centralized "Critical Health Digest" in `vmic-core` that aggregates high-severity findings from all sections.
@@ -62,7 +62,7 @@ VMIC is a modular Rust tool that produces human- and machine-readable system rep
 - ✅ Add HTML report template and aggregated HTML/JSON artifact generation.
 - ✅ Define and publish a JSON schema for machine-readable reports.
 - ✅ Extend Docker module with container metrics, graceful fallback when daemon unreachable — per-container health, sizes, limits, and runtime metadata delivered.
-- ⚙️ Implement modular security checks (cgroups, sshd, sudoers) once core modules are stable — SSH brute-force summary shipped; rule set still pending.
+- ✅ Implement modular security checks (cgroups, sshd, sudoers) with baseline hardening rules.
 - ✅ Disk usage drill-down (top directories/logs) for operational mounts.
 - ⏳ HTML UX refinements (navigation, collapsible sections, badges, tooltips, pseudo-FS "Noise" area).
 - ✅ Network insights: listener grouping, container correlation, service classification, and hardening heuristics.

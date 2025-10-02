@@ -1116,6 +1116,16 @@ dependencies = [
 ]
 
 [[package]]
+name = "mod-security"
+version = "0.1.0"
+dependencies = [
+ "anyhow",
+ "serde",
+ "serde_json",
+ "vmic-sdk",
+]
+
+[[package]]
 name = "mod-services"
 version = "0.1.0"
 dependencies = [
