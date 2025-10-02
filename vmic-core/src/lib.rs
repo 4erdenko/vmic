@@ -492,6 +492,7 @@ mod render {
 
     #[derive(Debug)]
     struct SectionView {
+        id: String,
         title: String,
         status_class: &'static str,
         status_label: String,
@@ -501,15 +502,18 @@ mod render {
         tables: Vec<TableView>,
         lists: Vec<ListView>,
         paragraph: Option<String>,
+        json_preview: Option<String>,
         has_key_values: bool,
         has_tables: bool,
         has_lists: bool,
         has_notes: bool,
+        has_json_preview: bool,
     }
 
     impl SectionView {
         fn new(section: &super::Section) -> Self {
             Self {
+                id: section.id.to_string(),
                 title: section.title.to_string(),
                 status_class: status_class(&section.status),
                 status_label: status_label(&section.status),
@@ -519,10 +523,12 @@ mod render {
                 tables: Vec::new(),
                 lists: Vec::new(),
                 paragraph: None,
+                json_preview: None,
                 has_key_values: false,
                 has_tables: false,
                 has_lists: false,
                 has_notes: !section.notes.is_empty(),
+                has_json_preview: false,
             }
         }
 
@@ -533,8 +539,9 @@ mod render {
             });
         }
 
-        fn add_table(&mut self, table: TableView) {
+        fn add_table(&mut self, mut table: TableView) {
             if !table.rows.is_empty() {
+                table.ensure_row_classes();
                 self.tables.push(table);
             }
         }
@@ -549,6 +556,8 @@ mod render {
             self.has_key_values = !self.key_values.is_empty();
             self.has_tables = !self.tables.is_empty();
             self.has_lists = !self.lists.is_empty();
+            self.has_notes = !self.notes.is_empty();
+            self.has_json_preview = self.json_preview.is_some();
         }
     }
 
@@ -563,6 +572,15 @@ mod render {
         title: Option<String>,
         headers: Vec<String>,
         rows: Vec<Vec<String>>,
+        row_classes: Vec<String>,
+    }
+
+    impl TableView {
+        fn ensure_row_classes(&mut self) {
+            if self.row_classes.len() < self.rows.len() {
+                self.row_classes.resize(self.rows.len(), String::new());
+            }
+        }
     }
 
     #[derive(Debug)]
@@ -578,6 +596,7 @@ mod render {
             .map(|section| {
                 let mut view = SectionView::new(section);
                 populate_section(&mut view, section.id, &section.body);
+                view.json_preview = build_json_preview(&section.body);
                 view.finalize();
                 view
             })
@@ -737,6 +756,7 @@ mod render {
                                 "Size".to_string(),
                             ],
                             rows,
+                            row_classes: Vec::new(),
                         });
                     }
                 }
@@ -781,6 +801,7 @@ mod render {
                                 "Active".to_string(),
                             ],
                             rows,
+                            row_classes: Vec::new(),
                         });
                     }
                 }
@@ -866,6 +887,7 @@ mod render {
                         "avg300".to_string(),
                     ],
                     rows,
+                    row_classes: Vec::new(),
                 });
             }
         }
@@ -924,7 +946,22 @@ mod render {
                 .collect();
 
             entries.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(Ordering::Equal));
-            let rows: Vec<Vec<String>> = entries.into_iter().map(|(_, row)| row).take(12).collect();
+            let mut row_classes: Vec<String> = Vec::new();
+            let rows: Vec<Vec<String>> = entries
+                .into_iter()
+                .map(|(ratio, row)| {
+                    let class = if ratio >= 0.90 {
+                        "row-critical"
+                    } else if ratio >= 0.80 {
+                        "row-warning"
+                    } else {
+                        ""
+                    };
+                    row_classes.push(class.to_string());
+                    row
+                })
+                .take(12)
+                .collect();
 
             if !rows.is_empty() {
                 view.add_table(TableView {
@@ -939,6 +976,7 @@ mod render {
                         "Inodes".to_string(),
                     ],
                     rows,
+                    row_classes,
                 });
             }
         }
@@ -963,6 +1001,7 @@ mod render {
                     title: Some("Images & Pseudo FS".to_string()),
                     headers: vec!["Mount".to_string(), "FS".to_string(), "Usage".to_string()],
                     rows,
+                    row_classes: Vec::new(),
                 });
             }
         }
@@ -1024,6 +1063,7 @@ mod render {
                         "State".to_string(),
                     ],
                     rows,
+                    row_classes: Vec::new(),
                 });
             }
         }
@@ -1051,6 +1091,7 @@ mod render {
                         "State".to_string(),
                     ],
                     rows,
+                    row_classes: Vec::new(),
                 });
             }
         }
@@ -1106,6 +1147,7 @@ mod render {
                         "TX packets".to_string(),
                     ],
                     rows,
+                    row_classes: Vec::new(),
                 });
             }
         }
@@ -1123,6 +1165,7 @@ mod render {
                         title: Some("Listening sockets".to_string()),
                         headers: vec!["Protocol".to_string(), "Count".to_string()],
                         rows,
+                        row_classes: Vec::new(),
                     });
                 }
             }
@@ -1302,6 +1345,7 @@ mod render {
                         "Command".to_string(),
                     ],
                     rows,
+                    row_classes: Vec::new(),
                 });
             }
         }
@@ -1344,6 +1388,7 @@ mod render {
                                 "Command".to_string(),
                             ],
                             rows,
+                            row_classes: Vec::new(),
                         });
                     }
                 }
@@ -1365,6 +1410,7 @@ mod render {
         }
 
         if let Some(containers) = body.get("containers").and_then(Value::as_array) {
+            let mut row_classes = Vec::new();
             let rows: Vec<Vec<String>> = containers
                 .iter()
                 .take(12)
@@ -1384,6 +1430,15 @@ mod render {
                         .and_then(Value::as_str)
                         .or_else(|| container.get("status").and_then(Value::as_str))
                         .unwrap_or("?");
+                    let state_lower = state.to_ascii_lowercase();
+                    let class = if state_lower.contains("unhealthy") {
+                        "row-critical"
+                    } else if state_lower.contains("restarting") || state_lower.contains("exited") {
+                        "row-warning"
+                    } else {
+                        ""
+                    };
+                    row_classes.push(class.to_string());
                     vec![name.to_string(), image.to_string(), state.to_string()]
                 })
                 .collect();
@@ -1392,6 +1447,7 @@ mod render {
                     title: Some("Containers".to_string()),
                     headers: vec!["Name".to_string(), "Image".to_string(), "State".to_string()],
                     rows,
+                    row_classes,
                 });
             }
         }
@@ -1439,6 +1495,7 @@ mod render {
             view.add_kv("Interactive shells", interactive.to_string());
             view.add_kv("Sudo access", sudo.to_string());
 
+            let mut row_classes = Vec::new();
             let rows: Vec<Vec<String>> = users
                 .iter()
                 .take(12)
@@ -1450,11 +1507,8 @@ mod render {
                         .map(|v| v.to_string())
                         .unwrap_or_else(|| "-".to_string());
                     let shell = user.get("shell").and_then(Value::as_str).unwrap_or("-");
-                    let role = if user.get("system").and_then(Value::as_bool).unwrap_or(false) {
-                        "system"
-                    } else {
-                        "regular"
-                    };
+                    let is_system = user.get("system").and_then(Value::as_bool).unwrap_or(false);
+                    let role = if is_system { "system" } else { "regular" };
                     let interactive = if user
                         .get("interactive")
                         .and_then(Value::as_bool)
@@ -1464,11 +1518,13 @@ mod render {
                     } else {
                         "no"
                     };
-                    let sudo = if user.get("sudo").and_then(Value::as_bool).unwrap_or(false) {
-                        "yes"
+                    let has_sudo = user.get("sudo").and_then(Value::as_bool).unwrap_or(false);
+                    let sudo = if has_sudo { "yes" } else { "no" };
+                    if has_sudo && !is_system {
+                        row_classes.push("row-warning".to_string());
                     } else {
-                        "no"
-                    };
+                        row_classes.push(String::new());
+                    }
                     vec![
                         name.to_string(),
                         uid,
@@ -1491,6 +1547,7 @@ mod render {
                         "Sudo".to_string(),
                     ],
                     rows,
+                    row_classes,
                 });
             }
         }
@@ -1522,6 +1579,25 @@ mod render {
                 view.paragraph = Some(b.to_string());
             }
             Value::Null => {}
+        }
+    }
+
+    const JSON_PREVIEW_LIMIT: usize = 2048;
+
+    fn build_json_preview(value: &Value) -> Option<String> {
+        match value {
+            Value::Null => None,
+            Value::Object(map) if map.is_empty() => None,
+            Value::Array(arr) if arr.is_empty() => None,
+            _ => serde_json::to_string_pretty(value)
+                .map(|mut text| {
+                    if text.len() > JSON_PREVIEW_LIMIT {
+                        text.truncate(JSON_PREVIEW_LIMIT);
+                        text.push_str("…");
+                    }
+                    text
+                })
+                .ok(),
         }
     }
 
@@ -1661,8 +1737,10 @@ mod tests {
         let html = report.to_html().expect("html render");
         assert!(html.contains("<!DOCTYPE html>"));
         assert!(html.contains("System Report"));
-        assert!(html.contains("class=\"card status-"));
-        assert!(html.contains("Overall Status"));
+        assert!(html.contains("<nav class=\"toc\""));
+        assert!(html.contains("class=\"card digest status-"));
+        assert!(html.contains("section-summary"));
+        assert!(html.contains("Back to top"));
     }
 
     #[test]

@@ -14,6 +14,9 @@
             --success: #047857;
             --degraded: #b45309;
             --error: #b91c1c;
+            --link: #2563eb;
+            --warning-bg: rgba(234, 179, 8, 0.12);
+            --critical-bg: rgba(220, 38, 38, 0.12);
         }
 
         @media (prefers-color-scheme: dark) {
@@ -23,7 +26,14 @@
                 --muted: #9ca3af;
                 --card-bg: #1f2937;
                 --border: #374151;
+                --link: #93c5fd;
+                --warning-bg: rgba(234, 179, 8, 0.25);
+                --critical-bg: rgba(248, 113, 113, 0.25);
             }
+        }
+
+        * {
+            box-sizing: border-box;
         }
 
         body {
@@ -31,15 +41,39 @@
             font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
             background: var(--bg);
             color: var(--fg);
+            line-height: 1.5;
         }
 
-        header {
-            padding: 2.5rem 1.5rem 1rem;
+        a {
+            color: var(--link);
+            text-decoration: none;
+        }
+
+        a:hover {
+            text-decoration: underline;
+        }
+
+        a:focus {
+            outline: 2px solid var(--link);
+            outline-offset: 2px;
+        }
+
+        .page-header {
+            position: sticky;
+            top: 0;
+            z-index: 10;
+            background: var(--card-bg);
+            border-bottom: 1px solid var(--border);
+            backdrop-filter: blur(6px);
+        }
+
+        .header-inner {
             max-width: 960px;
             margin: 0 auto;
+            padding: 1.75rem 1.5rem 1rem;
         }
 
-        header h1 {
+        .header-inner h1 {
             margin: 0 0 0.5rem;
             font-size: 2.25rem;
             font-weight: 700;
@@ -53,53 +87,103 @@
             font-size: 0.95rem;
         }
 
+        .toc {
+            background: rgba(59, 130, 246, 0.08);
+            border-bottom: 1px solid var(--border);
+        }
+
+        .toc-inner {
+            max-width: 960px;
+            margin: 0 auto;
+            padding: 1rem 1.5rem;
+        }
+
+        .toc-inner h2 {
+            margin: 0 0 0.5rem;
+            font-size: 1.1rem;
+            color: var(--muted);
+            text-transform: uppercase;
+            letter-spacing: 0.04em;
+        }
+
+        .toc ul {
+            list-style: none;
+            margin: 0;
+            padding: 0;
+            display: flex;
+            flex-wrap: wrap;
+            gap: 0.75rem 1.25rem;
+        }
+
+        .toc li {
+            font-size: 0.95rem;
+        }
+
+        .toc li.status-degraded a {
+            color: var(--degraded);
+        }
+
+        .toc li.status-error a {
+            color: var(--error);
+        }
+
         main {
             max-width: 960px;
-            margin: 0 auto 2rem;
+            margin: 0 auto 3rem;
             padding: 0 1.5rem 2rem;
             display: grid;
             gap: 1.5rem;
         }
 
-        .digest-list {
-            list-style: none;
-            padding: 0;
-            margin: 1rem 0 0;
-        }
-
-        .digest-list li {
-            padding: 0.5rem 0;
-            border-top: 1px solid var(--border);
-        }
-
-        .digest-list li:first-child {
-            border-top: none;
-        }
-
-        .digest-severity {
-            font-weight: 600;
-            margin-right: 0.5rem;
-        }
-
-        section.card {
+        .card {
             background: var(--card-bg);
             border: 1px solid var(--border);
             border-radius: 0.75rem;
-            padding: 1.5rem;
             box-shadow: 0 10px 25px rgba(15, 23, 42, 0.05);
         }
 
-        .card-header {
-            display: flex;
-            align-items: baseline;
-            justify-content: space-between;
-            gap: 1rem;
-            margin-bottom: 0.75rem;
+        .card.status-success {
+            border-left: 4px solid var(--success);
         }
 
-        .card-header h2 {
-            margin: 0;
-            font-size: 1.4rem;
+        .card.status-degraded {
+            border-left: 4px solid var(--degraded);
+        }
+
+        .card.status-error {
+            border-left: 4px solid var(--error);
+        }
+
+        .card.status-info {
+            border-left: 4px solid rgba(148, 163, 184, 0.8);
+        }
+
+        .card.status-warning {
+            border-left: 4px solid var(--degraded);
+        }
+
+        .card.status-critical {
+            border-left: 4px solid var(--error);
+        }
+
+        .card.digest {
+            padding: 1.5rem;
+        }
+
+        .card.digest .badge {
+            margin-left: auto;
+        }
+
+        .card header,
+        .section-body {
+            padding: 1.5rem;
+        }
+
+        .digest-header {
+            display: flex;
+            align-items: baseline;
+            gap: 1rem;
+            margin-bottom: 0.75rem;
         }
 
         .badge {
@@ -113,21 +197,103 @@
             color: var(--muted);
         }
 
-        .status-success .badge { background: rgba(4, 120, 87, 0.15); color: var(--success); }
-        .status-degraded .badge { background: rgba(180, 83, 9, 0.15); color: var(--degraded); }
-        .status-error .badge { background: rgba(185, 28, 28, 0.15); color: var(--error); }
+        .status-success .badge {
+            background: rgba(4, 120, 87, 0.15);
+            color: var(--success);
+        }
 
-        .summary {
-            margin: 0 0 1rem;
-            color: var(--fg);
-            font-weight: 500;
+        .status-degraded .badge {
+            background: rgba(180, 83, 9, 0.15);
+            color: var(--degraded);
+        }
+
+        .status-error .badge {
+            background: rgba(185, 28, 28, 0.15);
+            color: var(--error);
+        }
+
+        .digest-list {
+            list-style: none;
+            margin: 1rem 0 0;
+            padding: 0;
+            display: grid;
+            gap: 0.5rem;
+        }
+
+        .digest-list li a {
+            display: inline-flex;
+            gap: 0.5rem;
+            align-items: baseline;
+        }
+
+        .digest-severity {
+            font-weight: 600;
+        }
+
+        .digest-list li.severity-warning .digest-severity {
+            color: var(--degraded);
+        }
+
+        .digest-list li.severity-critical .digest-severity {
+            color: var(--error);
+        }
+
+        section.card {
+            padding: 0;
+        }
+
+        .section-summary summary {
+            list-style: none;
+            cursor: pointer;
+            padding: 1.5rem;
+            border-bottom: 1px solid var(--border);
+        }
+
+        .section-summary summary::-webkit-details-marker {
+            display: none;
+        }
+
+        .summary-header {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 1rem;
+        }
+
+        .summary-header h2 {
+            margin: 0;
+            font-size: 1.4rem;
+        }
+
+        .summary-meta {
+            display: flex;
+            align-items: baseline;
+            gap: 0.75rem;
+        }
+
+        .section-id {
+            font-family: "JetBrains Mono", "SFMono-Regular", Menlo, Monaco, Consolas, "Liberation Mono", "Courier New", monospace;
+            font-size: 0.85rem;
+            padding: 0.1rem 0.4rem;
+            border-radius: 0.4rem;
+            background: rgba(148, 163, 184, 0.2);
+            color: var(--muted);
+        }
+
+        .summary-text {
+            margin: 0.75rem 0 0;
+            color: var(--muted);
+        }
+
+        .section-body {
+            padding: 1.5rem;
         }
 
         dl.kv {
             display: grid;
             grid-template-columns: minmax(0, 200px) 1fr;
             gap: 0.5rem 1.5rem;
-            margin: 0 0 1rem;
+            margin: 0 0 1.2rem;
         }
 
         dl.kv dt {
@@ -139,26 +305,44 @@
             margin: 0;
         }
 
+        .table-scroll {
+            overflow-x: auto;
+            border-radius: 0.5rem;
+            border: 1px solid var(--border);
+            margin: 1rem 0;
+        }
+
         table.data {
             width: 100%;
             border-collapse: collapse;
-            margin: 1rem 0;
             font-size: 0.95rem;
+            min-width: 600px;
         }
 
         table.data thead {
-            background: rgba(59, 130, 246, 0.08);
+            position: sticky;
+            top: 0;
+            background: rgba(59, 130, 246, 0.12);
         }
 
         table.data th,
         table.data td {
-            padding: 0.5rem 0.75rem;
+            padding: 0.6rem 0.75rem;
             border-bottom: 1px solid var(--border);
             text-align: left;
+            vertical-align: top;
         }
 
         table.data tbody tr:last-child td {
             border-bottom: none;
+        }
+
+        tr.row-warning {
+            background: var(--warning-bg);
+        }
+
+        tr.row-critical {
+            background: var(--critical-bg);
         }
 
         ul.bullet {
@@ -167,9 +351,9 @@
         }
 
         .notes {
-            margin: 1rem 0;
+            margin: 1.5rem 0 0;
             padding: 1rem;
-            border-radius: 0.5rem;
+            border-radius: 0.6rem;
             background: rgba(59, 130, 246, 0.08);
         }
 
@@ -182,100 +366,227 @@
             margin: 0;
             padding-left: 1.25rem;
         }
+
+        .json-preview {
+            margin: 1rem 0;
+        }
+
+        .json-preview summary {
+            cursor: pointer;
+            font-weight: 600;
+        }
+
+        .json-preview pre {
+            margin: 0.75rem 0 0;
+            padding: 1rem;
+            background: rgba(15, 23, 42, 0.07);
+            border-radius: 0.5rem;
+            overflow: auto;
+            font-size: 0.85rem;
+        }
+
+        .back-to-top {
+            display: inline-block;
+            margin: 0 1.5rem 1.5rem;
+            font-size: 0.9rem;
+        }
+
+        @media (max-width: 720px) {
+            .summary-header {
+                flex-direction: column;
+                align-items: flex-start;
+                gap: 0.5rem;
+            }
+
+            dl.kv {
+                grid-template-columns: 1fr;
+            }
+
+            table.data {
+                min-width: 100%;
+            }
+        }
+
+        @media print {
+            body {
+                background: #ffffff;
+                color: #000000;
+            }
+
+            .page-header,
+            .toc {
+                position: static;
+                box-shadow: none;
+                border: none;
+            }
+
+            .card {
+                box-shadow: none;
+                border-color: #cccccc;
+                break-inside: avoid;
+            }
+
+            .section-details {
+                border: none;
+            }
+
+            .section-details[open] > summary,
+            .section-body,
+            .card.digest {
+                padding: 1rem;
+            }
+
+            details.section-details {
+                page-break-inside: avoid;
+            }
+
+            details.section-details:not([open]) {
+                display: block;
+            }
+
+            details.section-details summary {
+                border-bottom: none;
+            }
+
+            .back-to-top {
+                display: none;
+            }
+        }
     </style>
 </head>
-<body>
-<header>
-    <h1>System Report</h1>
-    <div class="meta">
-        <span>Generated: {{ report.metadata.generated_at_iso8601() }}</span>
-        <span>Sections: {{ report.metadata.sections }}</span>
+<body id="top">
+<header class="page-header">
+    <div class="header-inner">
+        <h1>System Report</h1>
+        <div class="meta">
+            <span>Generated: {{ report.metadata.generated_at_iso8601() }}</span>
+            <span>Sections: {{ report.metadata.sections }}</span>
+        </div>
     </div>
 </header>
-<main>
-    <section class="card status-{{ report.health_digest.overall.as_str() }}">
-        <div class="card-header">
+<nav class="toc" aria-label="Contents">
+    <div class="toc-inner">
+        <h2>Contents</h2>
+        <ul>
+        {% for section in sections %}
+            <li class="status-{{ section.status_class }}"><a href="#{{ section.id }}">{{ section.title }}</a></li>
+        {% endfor %}
+        </ul>
+    </div>
+</nav>
+<main role="main">
+    <section class="card digest status-{{ report.health_digest.overall.as_str() }}">
+        <div class="digest-header">
             <h2>Critical Health Digest</h2>
             <span class="badge">Overall Status: {{ report.health_digest.overall.display_label() }}</span>
         </div>
         {% if report.health_digest.findings.is_empty() %}
-            <p class="summary">No critical findings detected.</p>
+            <p class="summary-text">No critical findings detected.</p>
         {% else %}
             <ul class="digest-list">
             {% for finding in report.health_digest.findings %}
-                <li>
-                    <span class="digest-severity">{{ finding.severity.display_label() }}</span>
-                    <span>{{ finding.source_title }} — {{ finding.message }}</span>
+                <li class="severity-{{ finding.severity.as_str() }}">
+                    <a href="#{{ finding.source_id }}">
+                        <span class="digest-severity">{{ finding.severity.display_label() }}</span>
+                        <span>{{ finding.source_title }} — {{ finding.message }}</span>
+                    </a>
                 </li>
             {% endfor %}
             </ul>
         {% endif %}
     </section>
 {% for section in sections %}
-    <section class="card status-{{ section.status_class }}">
-        <div class="card-header">
-            <h2>{{ section.title }}</h2>
-            <span class="badge">{{ section.status_label }}</span>
-        </div>
-        {% if let Some(summary) = section.summary %}
-            <p class="summary">{{ summary }}</p>
-        {% endif %}
-        {% if section.has_key_values %}
-            <dl class="kv">
-            {% for item in section.key_values %}
-                <div>
-                    <dt>{{ item.key }}</dt>
-                    <dd>{{ item.value }}</dd>
+    <section class="card status-{{ section.status_class }}" id="{{ section.id }}">
+        <details class="section-summary" {% if section.status_class != "success" %}open{% endif %}>
+            <summary>
+                <div class="summary-header">
+                    <h2>{{ section.title }}</h2>
+                    <div class="summary-meta">
+                        <code class="section-id">{{ section.id }}</code>
+                        <span class="badge">{{ section.status_label }}</span>
+                    </div>
                 </div>
-            {% endfor %}
-            </dl>
-        {% endif %}
-        {% for table in section.tables %}
-            {% if let Some(title) = table.title %}
-                <h3>{{ title }}</h3>
-            {% endif %}
-            <table class="data">
-                <thead>
-                    <tr>
-                    {% for header in table.headers %}
-                        <th>{{ header }}</th>
+                {% if let Some(summary) = section.summary %}
+                    <p class="summary-text">{{ summary }}</p>
+                {% endif %}
+            </summary>
+            <div class="section-body">
+                {% if section.has_key_values %}
+                    <dl class="kv">
+                    {% for item in section.key_values %}
+                        <div>
+                            <dt>{{ item.key }}</dt>
+                            <dd>{{ item.value }}</dd>
+                        </div>
                     {% endfor %}
-                    </tr>
-                </thead>
-                <tbody>
-                {% for row in table.rows %}
-                    <tr>
-                    {% for cell in row %}
-                        <td>{{ cell }}</td>
-                    {% endfor %}
-                    </tr>
+                    </dl>
+                {% endif %}
+
+                {% for table in section.tables %}
+                    {% if let Some(title) = table.title %}
+                        <h3>{{ title }}</h3>
+                    {% endif %}
+                    <div class="table-scroll">
+                        <table class="data">
+                            <thead>
+                                <tr>
+                                {% for header in table.headers %}
+                                    <th>{{ header }}</th>
+                                {% endfor %}
+                                </tr>
+                            </thead>
+                            <tbody>
+                            {% for row in table.rows %}
+                                {% if table.row_classes[loop.index0].is_empty() %}
+                                    <tr>
+                                {% else %}
+                                    <tr class="{{ table.row_classes[loop.index0] }}">
+                                {% endif %}
+                                {% for cell in row %}
+                                    <td>{{ cell }}</td>
+                                {% endfor %}
+                                </tr>
+                            {% endfor %}
+                            </tbody>
+                        </table>
+                    </div>
                 {% endfor %}
-                </tbody>
-            </table>
-        {% endfor %}
-        {% for list in section.lists %}
-            {% if let Some(title) = list.title %}
-                <h3>{{ title }}</h3>
-            {% endif %}
-            <ul class="bullet">
-            {% for item in list.items %}
-                <li>{{ item }}</li>
-            {% endfor %}
-            </ul>
-        {% endfor %}
-        {% if let Some(paragraph) = section.paragraph %}
-            <p>{{ paragraph }}</p>
-        {% endif %}
-        {% if section.has_notes %}
-        <div class="notes">
-            <h3>Notes</h3>
-            <ul>
-            {% for note in section.notes %}
-                <li>{{ note }}</li>
-            {% endfor %}
-            </ul>
-        </div>
-        {% endif %}
+
+                {% for list in section.lists %}
+                    {% if let Some(title) = list.title %}
+                        <h3>{{ title }}</h3>
+                    {% endif %}
+                    <ul class="bullet">
+                    {% for item in list.items %}
+                        <li>{{ item }}</li>
+                    {% endfor %}
+                    </ul>
+                {% endfor %}
+
+                {% if let Some(paragraph) = section.paragraph %}
+                    <p>{{ paragraph }}</p>
+                {% endif %}
+
+                {% if section.has_notes %}
+                <div class="notes">
+                    <h3>Notes</h3>
+                    <ul>
+                    {% for note in section.notes %}
+                        <li>{{ note }}</li>
+                    {% endfor %}
+                    </ul>
+                </div>
+                {% endif %}
+
+                {% if let Some(preview) = section.json_preview %}
+                <details class="json-preview">
+                    <summary>Raw JSON</summary>
+                    <pre><code>{{ preview }}</code></pre>
+                </details>
+                {% endif %}
+            </div>
+        </details>
+        <a class="back-to-top" href="#top" aria-label="Back to top">↑ Back to top</a>
     </section>
 {% endfor %}
 </main>
