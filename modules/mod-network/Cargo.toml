@@ -12,6 +12,7 @@ serde.workspace = true
 serde_json.workspace = true
 vmic-sdk = { path = "../../vmic-sdk" }
 procfs.workspace = true
+once_cell.workspace = true
 
 [lints]
 workspace = true

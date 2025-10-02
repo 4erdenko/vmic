@@ -37,7 +37,7 @@ VMIC is a modular Rust tool that produces human- and machine-readable system rep
 | `mod-users` | `/etc/passwd`, groups, shadow analysis | ✅ implemented |
 | `mod-cron` | cron tabs, system timers | ✅ implemented (system cron coverage) |
 | `mod-services` | init/systemd unit discovery (`systemctl`/D-Bus) | ✅ implemented (systemctl-based) |
-| `mod-network` | interfaces, sockets, listening ports | ✅ socket→PID/cgroup mapping with grouped host/container listener summaries |
+| `mod-network` | interfaces, sockets, listening ports | ✅ socket→PID/cgroup mapping with grouped host/container listener summaries and hardening insights |
 | `mod-storage` | mounts, usage, heavy directories | ✅ operational vs pseudo FS split, inode tracking, Docker usage, heavy directory/log hotspots |
 | `mod-sar` | sysstat historical metrics (feature) | ✅ implemented (CPU averages) |
 | `mod-containers` | Podman/containerd (feature; e.g., `podman`, `containerd`) | ✅ implemented (runtime detection) |
@@ -65,5 +65,5 @@ VMIC is a modular Rust tool that produces human- and machine-readable system rep
 - ⚙️ Implement modular security checks (cgroups, sshd, sudoers) once core modules are stable — SSH brute-force summary shipped; rule set still pending.
 - ✅ Disk usage drill-down (top directories/logs) for operational mounts.
 - ⏳ HTML UX refinements (navigation, collapsible sections, badges, tooltips, pseudo-FS "Noise" area).
-- ⚙️ Network insights: delivered listener grouping/container correlation; pursue service classification & hardening heuristics.
+- ✅ Network insights: listener grouping, container correlation, service classification, and hardening heuristics.
 - 💤 Investigate `sar` ingestion and cross-platform container runtimes when demand appears.

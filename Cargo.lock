@@ -1077,6 +1077,7 @@ name = "mod-network"
 version = "0.1.0"
 dependencies = [
  "anyhow",
+ "once_cell",
  "procfs",
  "serde",
  "serde_json",

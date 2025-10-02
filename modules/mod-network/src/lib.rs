@@ -1,9 +1,10 @@
 use anyhow::{Context as _, Result};
+use once_cell::sync::Lazy;
 use procfs::net::{self, TcpState};
 use procfs::process;
 use serde::Serialize;
 use serde_json::json;
-use std::collections::{HashMap, HashSet};
+use std::collections::{BTreeMap, HashMap, HashSet};
 use vmic_sdk::{CollectionContext, Collector, CollectorMetadata, Section, register_collector};
 
 const MAX_SOCKET_SAMPLES: usize = 20;
@@ -34,6 +35,7 @@ impl Collector for NetworkCollector {
                         "counts": snapshot.listeners.counts,
                         "samples": snapshot.listeners.samples,
                         "groups": snapshot.listeners.groups,
+                        "insights": snapshot.listeners.insights,
                     }
                 });
 
@@ -46,7 +48,15 @@ impl Collector for NetworkCollector {
                 "network",
                 "Network Overview",
                 err.to_string(),
-                json!({ "interfaces": [], "listeners": {"counts": ListenerCounts::default(), "samples": []} }),
+                json!({
+                    "interfaces": [],
+                    "listeners": {
+                        "counts": ListenerCounts::default(),
+                        "samples": Vec::<serde_json::Value>::new(),
+                        "groups": Vec::<serde_json::Value>::new(),
+                        "insights": Vec::<serde_json::Value>::new(),
+                    }
+                }),
             )),
         }
     }
@@ -87,6 +97,7 @@ struct SocketSample {
     local_address: String,
     state: Option<String>,
     processes: Vec<SocketProcessInfo>,
+    service: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone, PartialEq, Eq)]
@@ -102,6 +113,7 @@ struct ListenerSnapshot {
     counts: ListenerCounts,
     samples: Vec<SocketSample>,
     groups: Vec<ListenerContainerGroup>,
+    insights: Vec<ListenerInsight>,
 }
 
 #[derive(Debug, Serialize, Clone, PartialEq, Eq)]
@@ -126,6 +138,23 @@ struct ListenerProcessGroup {
     socket_count: usize,
     protocols: Vec<String>,
     local_addresses: Vec<String>,
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+struct ListenerInsight {
+    rule: String,
+    severity: String,
+    message: String,
+    sockets: Vec<SocketReference>,
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+struct SocketReference {
+    protocol: String,
+    local_address: String,
+    service: Option<String>,
+    container: Option<String>,
+    pid: Option<i32>,
 }
 
 fn build_snapshot() -> Result<(NetworkSnapshot, Vec<String>)> {
@@ -175,11 +204,14 @@ fn gather_listeners() -> (ListenerSnapshot, Vec<String>) {
                 counts.tcp += 1;
                 if samples.len() < MAX_SOCKET_SAMPLES {
                     let processes = process_map.get(&entry.inode).cloned().unwrap_or_default();
+                    let protocol = "tcp".to_string();
+                    let local_address = format!("{}", entry.local_address);
                     samples.push(SocketSample {
-                        protocol: "tcp".into(),
-                        local_address: format!("{}", entry.local_address),
+                        protocol: protocol.clone(),
+                        local_address: local_address.clone(),
                         state: Some(format!("{:?}", entry.state)),
                         processes,
+                        service: classify_service(&protocol, &local_address),
                     });
                 }
             }
@@ -193,11 +225,14 @@ fn gather_listeners() -> (ListenerSnapshot, Vec<String>) {
                 counts.tcp6 += 1;
                 if samples.len() < MAX_SOCKET_SAMPLES {
                     let processes = process_map.get(&entry.inode).cloned().unwrap_or_default();
+                    let protocol = "tcp6".to_string();
+                    let local_address = format!("{}", entry.local_address);
                     samples.push(SocketSample {
-                        protocol: "tcp6".into(),
-                        local_address: format!("{}", entry.local_address),
+                        protocol: protocol.clone(),
+                        local_address: local_address.clone(),
                         state: Some(format!("{:?}", entry.state)),
                         processes,
+                        service: classify_service(&protocol, &local_address),
                     });
                 }
             }
@@ -213,11 +248,14 @@ fn gather_listeners() -> (ListenerSnapshot, Vec<String>) {
                 .take(MAX_SOCKET_SAMPLES.saturating_sub(samples.len()))
             {
                 let processes = process_map.get(&entry.inode).cloned().unwrap_or_default();
+                let protocol = "udp".to_string();
+                let local_address = format!("{}", entry.local_address);
                 samples.push(SocketSample {
-                    protocol: "udp".into(),
-                    local_address: format!("{}", entry.local_address),
+                    protocol: protocol.clone(),
+                    local_address: local_address.clone(),
                     state: None,
                     processes,
+                    service: classify_service(&protocol, &local_address),
                 });
             }
         }
@@ -232,11 +270,14 @@ fn gather_listeners() -> (ListenerSnapshot, Vec<String>) {
                 .take(MAX_SOCKET_SAMPLES.saturating_sub(samples.len()))
             {
                 let processes = process_map.get(&entry.inode).cloned().unwrap_or_default();
+                let protocol = "udp6".to_string();
+                let local_address = format!("{}", entry.local_address);
                 samples.push(SocketSample {
-                    protocol: "udp6".into(),
-                    local_address: format!("{}", entry.local_address),
+                    protocol: protocol.clone(),
+                    local_address: local_address.clone(),
                     state: None,
                     processes,
+                    service: classify_service(&protocol, &local_address),
                 });
             }
         }
@@ -244,12 +285,14 @@ fn gather_listeners() -> (ListenerSnapshot, Vec<String>) {
     }
 
     let groups = build_listener_groups(&samples);
+    let insights = derive_listener_insights(&samples);
 
     (
         ListenerSnapshot {
             counts,
             samples,
             groups,
+            insights,
         },
         notes,
     )
@@ -345,6 +388,151 @@ fn build_listener_groups(samples: &[SocketSample]) -> Vec<ListenerContainerGroup
         .collect();
     groups.sort_by(|a, b| b.socket_count.cmp(&a.socket_count));
     groups
+}
+
+fn derive_listener_insights(samples: &[SocketSample]) -> Vec<ListenerInsight> {
+    let mut rules: BTreeMap<&'static str, InsightBucket> = BTreeMap::new();
+
+    for sample in samples {
+        if is_wildcard_address(&sample.local_address) {
+            rules
+                .entry("wildcard_listener")
+                .or_insert_with(|| {
+                    InsightBucket::new("warning", "Listener bound to all interfaces")
+                })
+                .push(sample);
+        }
+
+        if sample
+            .service
+            .as_deref()
+            .map(|service| INSECURE_SERVICES.contains(service))
+            .unwrap_or(false)
+        {
+            rules
+                .entry("legacy_protocol")
+                .or_insert_with(|| {
+                    InsightBucket::new("warning", "Legacy or insecure protocol exposed")
+                })
+                .push(sample);
+        }
+    }
+
+    rules
+        .into_iter()
+        .map(|(rule, bucket)| ListenerInsight {
+            rule: rule.to_string(),
+            severity: bucket.severity,
+            message: bucket.message,
+            sockets: bucket.sockets,
+        })
+        .collect()
+}
+
+struct InsightBucket {
+    severity: String,
+    message: String,
+    sockets: Vec<SocketReference>,
+}
+
+impl InsightBucket {
+    fn new(severity: &str, message: &str) -> Self {
+        InsightBucket {
+            severity: severity.to_string(),
+            message: message.to_string(),
+            sockets: Vec::new(),
+        }
+    }
+
+    fn push(&mut self, sample: &SocketSample) {
+        let reference = SocketReference {
+            protocol: sample.protocol.clone(),
+            local_address: sample.local_address.clone(),
+            service: sample.service.clone(),
+            container: sample
+                .processes
+                .iter()
+                .find_map(|process| process.container.clone()),
+            pid: sample.processes.first().map(|process| process.pid),
+        };
+
+        self.sockets.push(reference);
+    }
+}
+
+fn classify_service(protocol: &str, local_address: &str) -> Option<String> {
+    let port = extract_port(local_address)?;
+    let key = (protocol.to_ascii_lowercase(), port);
+    SERVICE_TABLE.get(&key).cloned()
+}
+
+fn extract_port(address: &str) -> Option<u16> {
+    address
+        .rsplit_once(':')
+        .and_then(|(_, port)| port.parse::<u16>().ok())
+}
+
+fn is_wildcard_address(address: &str) -> bool {
+    address.starts_with("0.0.0.0:")
+        || address.starts_with(":::")
+        || address.starts_with("[::]:")
+        || address.starts_with("[::ffff:0.0.0.0]:")
+}
+
+static SERVICE_TABLE: Lazy<BTreeMap<(String, u16), String>> = Lazy::new(|| {
+    let mut map = BTreeMap::new();
+    insert_service(&mut map, "tcp", 21, "ftp");
+    insert_service(&mut map, "tcp", 22, "ssh");
+    insert_service(&mut map, "tcp", 23, "telnet");
+    insert_service(&mut map, "tcp", 25, "smtp");
+    insert_service(&mut map, "tcp", 53, "dns");
+    insert_service(&mut map, "udp", 53, "dns");
+    insert_service(&mut map, "tcp", 80, "http");
+    insert_service(&mut map, "tcp", 110, "pop3");
+    insert_service(&mut map, "tcp", 143, "imap");
+    insert_service(&mut map, "tcp", 389, "ldap");
+    insert_service(&mut map, "tcp", 443, "https");
+    insert_service(&mut map, "tcp", 445, "smb");
+    insert_service(&mut map, "tcp", 465, "smtps");
+    insert_service(&mut map, "tcp", 587, "submission");
+    insert_service(&mut map, "tcp", 993, "imaps");
+    insert_service(&mut map, "tcp", 995, "pop3s");
+    insert_service(&mut map, "tcp", 1433, "mssql");
+    insert_service(&mut map, "tcp", 1521, "oracle");
+    insert_service(&mut map, "tcp", 2049, "nfs");
+    insert_service(&mut map, "udp", 2049, "nfs");
+    insert_service(&mut map, "tcp", 2375, "docker");
+    insert_service(&mut map, "tcp", 3306, "mysql");
+    insert_service(&mut map, "tcp", 3389, "rdp");
+    insert_service(&mut map, "tcp", 5432, "postgresql");
+    insert_service(&mut map, "tcp", 5900, "vnc");
+    insert_service(&mut map, "tcp", 6379, "redis");
+    insert_service(&mut map, "tcp", 8080, "http-alt");
+    insert_service(&mut map, "tcp", 8443, "https-alt");
+    map
+});
+
+static INSECURE_SERVICES: Lazy<HashSet<String>> = Lazy::new(|| {
+    HashSet::from([
+        "telnet".to_string(),
+        "ftp".to_string(),
+        "pop3".to_string(),
+        "imap".to_string(),
+        "smtp".to_string(),
+        "mysql".to_string(),
+        "redis".to_string(),
+        "rdp".to_string(),
+        "vnc".to_string(),
+    ])
+});
+
+fn insert_service(
+    map: &mut BTreeMap<(String, u16), String>,
+    protocol: &str,
+    port: u16,
+    name: &str,
+) {
+    map.insert((protocol.to_string(), port), name.to_string());
 }
 
 #[derive(Debug)]
@@ -449,6 +637,7 @@ mod tests {
                     uid: 0,
                     container: Some("container_a".into()),
                 }],
+                service: Some("http".into()),
             },
             SocketSample {
                 protocol: "tcp".into(),
@@ -460,6 +649,7 @@ mod tests {
                     uid: 0,
                     container: Some("container_a".into()),
                 }],
+                service: Some("https".into()),
             },
             SocketSample {
                 protocol: "tcp".into(),
@@ -471,6 +661,7 @@ mod tests {
                     uid: 0,
                     container: None,
                 }],
+                service: Some("ssh".into()),
             },
         ];
 
@@ -492,5 +683,51 @@ mod tests {
             .expect("host group");
         assert_eq!(host_group.socket_count, 1);
         assert_eq!(host_group.processes[0].local_addresses, vec!["0.0.0.0:22"]);
+    }
+
+    #[test]
+    fn derive_listener_insights_flags_wildcard_and_legacy() {
+        let samples = vec![
+            SocketSample {
+                protocol: "tcp".into(),
+                local_address: "0.0.0.0:23".into(),
+                state: Some("Listen".into()),
+                processes: vec![SocketProcessInfo {
+                    pid: 42,
+                    command: "inetd".into(),
+                    uid: 0,
+                    container: None,
+                }],
+                service: Some("telnet".into()),
+            },
+            SocketSample {
+                protocol: "tcp".into(),
+                local_address: "127.0.0.1:8080".into(),
+                state: Some("Listen".into()),
+                processes: vec![SocketProcessInfo {
+                    pid: 200,
+                    command: "app".into(),
+                    uid: 1000,
+                    container: Some("svc".into()),
+                }],
+                service: Some("http-alt".into()),
+            },
+        ];
+
+        let insights = derive_listener_insights(&samples);
+        assert_eq!(insights.len(), 2);
+
+        let wildcard = insights
+            .iter()
+            .find(|insight| insight.rule == "wildcard_listener")
+            .expect("wildcard rule");
+        assert_eq!(wildcard.sockets.len(), 1);
+        assert_eq!(wildcard.sockets[0].pid, Some(42));
+
+        let legacy = insights
+            .iter()
+            .find(|insight| insight.rule == "legacy_protocol")
+            .expect("legacy rule");
+        assert_eq!(legacy.sockets[0].service.as_deref(), Some("telnet"));
     }
 }
