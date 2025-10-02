@@ -343,10 +343,10 @@ mod health {
 
 mod render {
     use askama::Template;
+    use std::cmp::Ordering;
 
-    use crate::filters;
-
-    use super::Report;
+    use super::{Report, SectionStatus};
+    use serde_json::Value;
 
     #[derive(Template)]
     #[template(path = "report.md", escape = "none")]
@@ -358,6 +358,7 @@ mod render {
     #[template(path = "report.html")]
     struct HtmlReport<'a> {
         report: &'a Report,
+        sections: Vec<SectionView>,
     }
 
     pub fn render_markdown(report: &Report) -> askama::Result<String> {
@@ -365,16 +366,719 @@ mod render {
     }
 
     pub fn render_html(report: &Report) -> askama::Result<String> {
-        HtmlReport { report }.render()
+        HtmlReport {
+            report,
+            sections: build_section_views(report),
+        }
+        .render()
     }
-}
 
-pub mod filters {
-    use askama::{Error, Result, Values};
-    use serde_json::Value;
+    #[derive(Debug)]
+    struct SectionView {
+        title: String,
+        status_class: &'static str,
+        status_label: String,
+        summary: Option<String>,
+        notes: Vec<String>,
+        key_values: Vec<KeyValue>,
+        tables: Vec<TableView>,
+        lists: Vec<ListView>,
+        paragraph: Option<String>,
+        has_key_values: bool,
+        has_tables: bool,
+        has_lists: bool,
+        has_notes: bool,
+    }
 
-    pub fn json_pretty(value: &Value, _args: &dyn Values) -> Result<String> {
-        serde_json::to_string_pretty(value).map_err(|err| Error::Custom(Box::new(err)))
+    impl SectionView {
+        fn new(section: &super::Section) -> Self {
+            Self {
+                title: section.title.to_string(),
+                status_class: status_class(&section.status),
+                status_label: status_label(&section.status),
+                summary: section.summary.clone(),
+                notes: section.notes.clone(),
+                key_values: Vec::new(),
+                tables: Vec::new(),
+                lists: Vec::new(),
+                paragraph: None,
+                has_key_values: false,
+                has_tables: false,
+                has_lists: false,
+                has_notes: !section.notes.is_empty(),
+            }
+        }
+
+        fn add_kv<K: Into<String>, V: Into<String>>(&mut self, key: K, value: V) {
+            self.key_values.push(KeyValue {
+                key: key.into(),
+                value: value.into(),
+            });
+        }
+
+        fn add_table(&mut self, table: TableView) {
+            if !table.rows.is_empty() {
+                self.tables.push(table);
+            }
+        }
+
+        fn add_list(&mut self, list: ListView) {
+            if !list.items.is_empty() {
+                self.lists.push(list);
+            }
+        }
+
+        fn finalize(&mut self) {
+            self.has_key_values = !self.key_values.is_empty();
+            self.has_tables = !self.tables.is_empty();
+            self.has_lists = !self.lists.is_empty();
+        }
+    }
+
+    #[derive(Debug)]
+    struct KeyValue {
+        key: String,
+        value: String,
+    }
+
+    #[derive(Debug)]
+    struct TableView {
+        title: Option<String>,
+        headers: Vec<String>,
+        rows: Vec<Vec<String>>,
+    }
+
+    #[derive(Debug)]
+    struct ListView {
+        title: Option<String>,
+        items: Vec<String>,
+    }
+
+    fn build_section_views(report: &Report) -> Vec<SectionView> {
+        report
+            .sections
+            .iter()
+            .map(|section| {
+                let mut view = SectionView::new(section);
+                populate_section(&mut view, section.id, &section.body);
+                view.finalize();
+                view
+            })
+            .collect()
+    }
+
+    fn populate_section(view: &mut SectionView, id: &str, body: &Value) {
+        match id {
+            "os" => populate_os(view, body),
+            "proc" => populate_proc(view, body),
+            "storage" => populate_storage(view, body),
+            "services" => populate_services(view, body),
+            "network" => populate_network(view, body),
+            "journal" => populate_journal(view, body),
+            "cron" => populate_cron(view, body),
+            "docker" => populate_docker(view, body),
+            "containers" => populate_containers(view, body),
+            "users" => populate_users(view, body),
+            _ => populate_generic(view, body),
+        }
+    }
+
+    fn populate_os(view: &mut SectionView, body: &Value) {
+        if let Some(os_release) = body.get("os_release").and_then(Value::as_object) {
+            if let Some(pretty) = os_release.get("pretty_name").and_then(Value::as_str) {
+                view.add_kv("Distribution", pretty);
+            } else if let Some(name) = os_release.get("name").and_then(Value::as_str) {
+                view.add_kv("Distribution", name);
+            }
+            if let Some(version) = os_release.get("version").and_then(Value::as_str) {
+                view.add_kv("Version", version);
+            }
+            if let Some(id_like) = os_release.get("id_like").and_then(Value::as_array) {
+                let values: Vec<&str> = id_like.iter().filter_map(Value::as_str).collect();
+                if !values.is_empty() {
+                    view.add_kv("ID Like", values.join(", "));
+                }
+            }
+        }
+
+        if let Some(kernel) = body.get("kernel").and_then(Value::as_object) {
+            if let Some(release) = kernel.get("release").and_then(Value::as_str) {
+                view.add_kv("Kernel Release", release);
+            }
+            if let Some(version) = kernel.get("version").and_then(Value::as_str) {
+                view.add_kv("Kernel Version", version);
+            }
+            if let Some(machine) = kernel.get("machine").and_then(Value::as_str) {
+                view.add_kv("Architecture", machine);
+            }
+        }
+    }
+
+    fn populate_proc(view: &mut SectionView, body: &Value) {
+        if let Some(load) = body.get("loadavg").and_then(Value::as_object) {
+            if let Some(one) = load.get("one").and_then(Value::as_f64) {
+                view.add_kv("Load (1m)", format!("{:.2}", one));
+            }
+            if let Some(five) = load.get("five").and_then(Value::as_f64) {
+                view.add_kv("Load (5m)", format!("{:.2}", five));
+            }
+            if let Some(fifteen) = load.get("fifteen").and_then(Value::as_f64) {
+                view.add_kv("Load (15m)", format!("{:.2}", fifteen));
+            }
+        }
+
+        if let Some(memory) = body.get("memory_kb").and_then(Value::as_object) {
+            if let Some(total) = memory.get("total").and_then(Value::as_u64) {
+                view.add_kv("Memory Total", format_bytes(total * 1024));
+            }
+            if let (Some(total), Some(available)) = (
+                memory.get("total").and_then(Value::as_u64),
+                memory.get("available").and_then(Value::as_u64),
+            ) {
+                let ratio = if total > 0 {
+                    Some(available as f64 / total as f64)
+                } else {
+                    None
+                };
+                let value = if let Some(ratio) = ratio {
+                    format!(
+                        "{} ({})",
+                        format_bytes(available * 1024),
+                        format_percent(ratio)
+                    )
+                } else {
+                    format_bytes(available * 1024)
+                };
+                view.add_kv("Memory Available", value);
+            }
+        }
+
+        if let Some(swap) = body.get("swap_kb").and_then(Value::as_object) {
+            if let Some(total) = swap.get("total").and_then(Value::as_u64) {
+                view.add_kv("Swap Total", format_bytes(total * 1024));
+            }
+            if let Some(free) = swap.get("free").and_then(Value::as_u64) {
+                view.add_kv("Swap Free", format_bytes(free * 1024));
+            }
+        }
+    }
+
+    fn populate_storage(view: &mut SectionView, body: &Value) {
+        if let Some(mounts) = body.get("mounts").and_then(Value::as_array) {
+            let mut entries: Vec<(f64, Vec<String>)> = mounts
+                .iter()
+                .filter_map(|mount| {
+                    let mount_point = mount.get("mount_point")?.as_str()?.to_string();
+                    let fs_type = mount.get("fs_type").and_then(Value::as_str).unwrap_or("-");
+                    let used = mount
+                        .get("used_bytes")
+                        .and_then(Value::as_u64)
+                        .map(format_bytes)
+                        .unwrap_or_else(|| "-".to_string());
+                    let total = mount
+                        .get("total_bytes")
+                        .and_then(Value::as_u64)
+                        .map(format_bytes)
+                        .unwrap_or_else(|| "-".to_string());
+                    let ratio = mount
+                        .get("usage_ratio")
+                        .and_then(Value::as_f64)
+                        .unwrap_or(0.0);
+                    let usage = format_percent(ratio);
+                    Some((
+                        ratio,
+                        vec![mount_point, fs_type.to_string(), used, total, usage],
+                    ))
+                })
+                .collect();
+
+            entries.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(Ordering::Equal));
+            let rows: Vec<Vec<String>> = entries.into_iter().map(|(_, row)| row).take(10).collect();
+
+            if !rows.is_empty() {
+                view.add_table(TableView {
+                    title: Some("Top Mounts".to_string()),
+                    headers: vec![
+                        "Mount".to_string(),
+                        "FS".to_string(),
+                        "Used".to_string(),
+                        "Total".to_string(),
+                        "Usage".to_string(),
+                    ],
+                    rows,
+                });
+            }
+        }
+
+        if let Some(totals) = body.get("totals").and_then(Value::as_object) {
+            if let Some(total) = totals.get("total_bytes").and_then(Value::as_u64) {
+                view.add_kv("Total Capacity", format_bytes(total));
+            }
+            if let Some(used) = totals.get("used_bytes").and_then(Value::as_u64) {
+                view.add_kv("Used Capacity", format_bytes(used));
+            }
+            if let Some(available) = totals.get("available_bytes").and_then(Value::as_u64) {
+                view.add_kv("Available", format_bytes(available));
+            }
+        }
+    }
+
+    fn populate_services(view: &mut SectionView, body: &Value) {
+        if let Some(running) = body.get("running").and_then(Value::as_array) {
+            let mut rows = Vec::new();
+            for entry in running.iter().take(12) {
+                let unit = entry
+                    .get("unit")
+                    .and_then(Value::as_str)
+                    .unwrap_or("(unknown)");
+                let description = entry
+                    .get("description")
+                    .and_then(Value::as_str)
+                    .unwrap_or("-");
+                let state = format_service_state(entry);
+                rows.push(vec![unit.to_string(), description.to_string(), state]);
+            }
+            if !rows.is_empty() {
+                view.add_table(TableView {
+                    title: Some(format!("Running Services ({} total)", running.len())),
+                    headers: vec![
+                        "Unit".to_string(),
+                        "Description".to_string(),
+                        "State".to_string(),
+                    ],
+                    rows,
+                });
+            }
+        }
+
+        if let Some(failed) = body.get("failed").and_then(Value::as_array) {
+            let mut rows = Vec::new();
+            for entry in failed.iter().take(12) {
+                let unit = entry
+                    .get("unit")
+                    .and_then(Value::as_str)
+                    .unwrap_or("(unknown)");
+                let description = entry
+                    .get("description")
+                    .and_then(Value::as_str)
+                    .unwrap_or("-");
+                let state = format_service_state(entry);
+                rows.push(vec![unit.to_string(), description.to_string(), state]);
+            }
+            if !rows.is_empty() {
+                view.add_table(TableView {
+                    title: Some("Failed Services".to_string()),
+                    headers: vec![
+                        "Unit".to_string(),
+                        "Description".to_string(),
+                        "State".to_string(),
+                    ],
+                    rows,
+                });
+            }
+        }
+    }
+
+    fn format_service_state(value: &Value) -> String {
+        let active = value.get("active").and_then(Value::as_str).unwrap_or("?");
+        let sub = value.get("sub").and_then(Value::as_str).unwrap_or("?");
+        format!("{active} / {sub}")
+    }
+
+    fn populate_network(view: &mut SectionView, body: &Value) {
+        if let Some(interfaces) = body.get("interfaces").and_then(Value::as_array) {
+            let mut rows = Vec::new();
+            for iface in interfaces.iter().take(10) {
+                let name = iface.get("name").and_then(Value::as_str).unwrap_or("?");
+                let rx_bytes = iface
+                    .get("rx_bytes")
+                    .and_then(Value::as_u64)
+                    .map(format_bytes)
+                    .unwrap_or_else(|| "-".to_string());
+                let tx_bytes = iface
+                    .get("tx_bytes")
+                    .and_then(Value::as_u64)
+                    .map(format_bytes)
+                    .unwrap_or_else(|| "-".to_string());
+                let rx_packets = iface
+                    .get("rx_packets")
+                    .and_then(Value::as_u64)
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "-".to_string());
+                let tx_packets = iface
+                    .get("tx_packets")
+                    .and_then(Value::as_u64)
+                    .map(|v| v.to_string())
+                    .unwrap_or_else(|| "-".to_string());
+                rows.push(vec![
+                    name.to_string(),
+                    rx_bytes,
+                    tx_bytes,
+                    rx_packets,
+                    tx_packets,
+                ]);
+            }
+            if !rows.is_empty() {
+                view.add_table(TableView {
+                    title: Some("Network Interfaces".to_string()),
+                    headers: vec![
+                        "Interface".to_string(),
+                        "RX".to_string(),
+                        "TX".to_string(),
+                        "RX packets".to_string(),
+                        "TX packets".to_string(),
+                    ],
+                    rows,
+                });
+            }
+        }
+
+        if let Some(listeners) = body.get("listeners").and_then(Value::as_object) {
+            if let Some(counts) = listeners.get("counts").and_then(Value::as_object) {
+                let mut rows = Vec::new();
+                for (proto, value) in counts.iter() {
+                    if let Some(count) = value.as_u64() {
+                        rows.push(vec![proto.to_string(), count.to_string()]);
+                    }
+                }
+                if !rows.is_empty() {
+                    view.add_table(TableView {
+                        title: Some("Listening sockets".to_string()),
+                        headers: vec!["Protocol".to_string(), "Count".to_string()],
+                        rows,
+                    });
+                }
+            }
+
+            if let Some(samples) = listeners.get("samples").and_then(Value::as_array) {
+                let items: Vec<String> = samples
+                    .iter()
+                    .take(10)
+                    .map(|sample| {
+                        let addr = sample
+                            .get("local_address")
+                            .and_then(Value::as_str)
+                            .unwrap_or("?");
+                        let proto = sample
+                            .get("protocol")
+                            .and_then(Value::as_str)
+                            .unwrap_or("?");
+                        let state = sample
+                            .get("state")
+                            .and_then(Value::as_str)
+                            .unwrap_or("listening");
+                        format!("{proto} {addr} ({state})")
+                    })
+                    .collect();
+                if !items.is_empty() {
+                    view.add_list(ListView {
+                        title: Some("Sample listeners".to_string()),
+                        items,
+                    });
+                }
+            }
+        }
+    }
+
+    fn populate_journal(view: &mut SectionView, body: &Value) {
+        if let Some(entries) = body.get("entries").and_then(Value::as_array) {
+            let items: Vec<String> = entries
+                .iter()
+                .take(20)
+                .map(|entry| {
+                    let timestamp = entry
+                        .get("timestamp")
+                        .and_then(Value::as_str)
+                        .unwrap_or("unknown");
+                    let source = entry.get("source").and_then(Value::as_str).unwrap_or("?");
+                    let message = entry
+                        .get("message")
+                        .and_then(Value::as_str)
+                        .map(truncate)
+                        .unwrap_or_else(|| "(no message)".to_string());
+                    format!("{timestamp} — {source}: {message}")
+                })
+                .collect();
+            if !items.is_empty() {
+                view.add_list(ListView {
+                    title: Some("Recent journal entries".to_string()),
+                    items,
+                });
+            }
+        }
+    }
+
+    fn populate_cron(view: &mut SectionView, body: &Value) {
+        if let Some(system) = body.get("system_crontab").and_then(Value::as_array) {
+            let rows: Vec<Vec<String>> = system
+                .iter()
+                .map(|entry| {
+                    vec![
+                        entry
+                            .get("schedule")
+                            .and_then(Value::as_str)
+                            .unwrap_or("?")
+                            .to_string(),
+                        entry
+                            .get("user")
+                            .and_then(Value::as_str)
+                            .unwrap_or("root")
+                            .to_string(),
+                        entry
+                            .get("command")
+                            .and_then(Value::as_str)
+                            .unwrap_or("?")
+                            .to_string(),
+                    ]
+                })
+                .collect();
+            if !rows.is_empty() {
+                view.add_table(TableView {
+                    title: Some("System crontab".to_string()),
+                    headers: vec![
+                        "Schedule".to_string(),
+                        "User".to_string(),
+                        "Command".to_string(),
+                    ],
+                    rows,
+                });
+            }
+        }
+
+        if let Some(files) = body.get("cron_d").and_then(Value::as_array) {
+            for file in files.iter() {
+                let path = file
+                    .get("path")
+                    .and_then(Value::as_str)
+                    .unwrap_or("/etc/cron.d");
+                if let Some(entries) = file.get("entries").and_then(Value::as_array) {
+                    let rows: Vec<Vec<String>> = entries
+                        .iter()
+                        .map(|entry| {
+                            vec![
+                                entry
+                                    .get("schedule")
+                                    .and_then(Value::as_str)
+                                    .unwrap_or("?")
+                                    .to_string(),
+                                entry
+                                    .get("user")
+                                    .and_then(Value::as_str)
+                                    .unwrap_or("root")
+                                    .to_string(),
+                                entry
+                                    .get("command")
+                                    .and_then(Value::as_str)
+                                    .unwrap_or("?")
+                                    .to_string(),
+                            ]
+                        })
+                        .collect();
+                    if !rows.is_empty() {
+                        view.add_table(TableView {
+                            title: Some(path.to_string()),
+                            headers: vec![
+                                "Schedule".to_string(),
+                                "User".to_string(),
+                                "Command".to_string(),
+                            ],
+                            rows,
+                        });
+                    }
+                }
+            }
+        }
+    }
+
+    fn populate_docker(view: &mut SectionView, body: &Value) {
+        if let Some(engine) = body.get("engine").and_then(Value::as_object) {
+            if let Some(status) = engine.get("status").and_then(Value::as_str) {
+                view.add_kv("Engine status", status);
+            }
+            if let Some(version) = engine.get("version").and_then(Value::as_str) {
+                view.add_kv("Engine version", version);
+            }
+            if let Some(api) = engine.get("api_version").and_then(Value::as_str) {
+                view.add_kv("API version", api);
+            }
+        }
+
+        if let Some(containers) = body.get("containers").and_then(Value::as_array) {
+            let rows: Vec<Vec<String>> = containers
+                .iter()
+                .take(12)
+                .map(|container| {
+                    let name = container
+                        .get("names")
+                        .and_then(Value::as_array)
+                        .and_then(|arr| arr.iter().filter_map(Value::as_str).next())
+                        .or_else(|| container.get("id").and_then(Value::as_str))
+                        .unwrap_or("unknown");
+                    let image = container
+                        .get("image")
+                        .and_then(Value::as_str)
+                        .unwrap_or("-");
+                    let state = container
+                        .get("state")
+                        .and_then(Value::as_str)
+                        .or_else(|| container.get("status").and_then(Value::as_str))
+                        .unwrap_or("?");
+                    vec![name.to_string(), image.to_string(), state.to_string()]
+                })
+                .collect();
+            if !rows.is_empty() {
+                view.add_table(TableView {
+                    title: Some("Containers".to_string()),
+                    headers: vec!["Name".to_string(), "Image".to_string(), "State".to_string()],
+                    rows,
+                });
+            }
+        }
+    }
+
+    fn populate_containers(view: &mut SectionView, body: &Value) {
+        if let Some(runtimes) = body.get("runtimes").and_then(Value::as_array) {
+            let items: Vec<String> = runtimes
+                .iter()
+                .filter_map(Value::as_str)
+                .map(ToOwned::to_owned)
+                .collect();
+            if !items.is_empty() {
+                view.add_list(ListView {
+                    title: Some("Detected runtimes".to_string()),
+                    items,
+                });
+            }
+        }
+    }
+
+    fn populate_users(view: &mut SectionView, body: &Value) {
+        if let Some(users) = body.get("users").and_then(Value::as_array) {
+            let total = users.len();
+            let system = users
+                .iter()
+                .filter(|user| user.get("system").and_then(Value::as_bool).unwrap_or(false))
+                .count();
+            let regular = total.saturating_sub(system);
+            view.add_kv("Users", format!("{} total", total));
+            view.add_kv("System users", system.to_string());
+            view.add_kv("Regular users", regular.to_string());
+
+            let rows: Vec<Vec<String>> = users
+                .iter()
+                .take(12)
+                .map(|user| {
+                    let name = user.get("name").and_then(Value::as_str).unwrap_or("?");
+                    let uid = user
+                        .get("uid")
+                        .and_then(Value::as_u64)
+                        .map(|v| v.to_string())
+                        .unwrap_or_else(|| "-".to_string());
+                    let shell = user.get("shell").and_then(Value::as_str).unwrap_or("-");
+                    let role = if user.get("system").and_then(Value::as_bool).unwrap_or(false) {
+                        "system"
+                    } else {
+                        "regular"
+                    };
+                    vec![name.to_string(), uid, shell.to_string(), role.to_string()]
+                })
+                .collect();
+            if !rows.is_empty() {
+                view.add_table(TableView {
+                    title: Some("Sample accounts".to_string()),
+                    headers: vec![
+                        "User".to_string(),
+                        "UID".to_string(),
+                        "Shell".to_string(),
+                        "Type".to_string(),
+                    ],
+                    rows,
+                });
+            }
+        }
+    }
+
+    fn populate_generic(view: &mut SectionView, body: &Value) {
+        match body {
+            Value::Object(map) => {
+                for (key, value) in map.iter() {
+                    view.add_kv(key, summarize_value(value));
+                }
+            }
+            Value::Array(items) => {
+                let list: Vec<String> = items.iter().take(20).map(summarize_value).collect();
+                if !list.is_empty() {
+                    view.add_list(ListView {
+                        title: None,
+                        items: list,
+                    });
+                }
+            }
+            Value::String(s) => {
+                view.paragraph = Some(s.clone());
+            }
+            Value::Number(num) => {
+                view.paragraph = Some(num.to_string());
+            }
+            Value::Bool(b) => {
+                view.paragraph = Some(b.to_string());
+            }
+            Value::Null => {}
+        }
+    }
+
+    fn status_class(status: &SectionStatus) -> &'static str {
+        match status {
+            SectionStatus::Success => "success",
+            SectionStatus::Degraded => "degraded",
+            SectionStatus::Error => "error",
+        }
+    }
+
+    fn status_label(status: &SectionStatus) -> String {
+        let mut label = status.to_string();
+        if let Some(first) = label.get_mut(0..1) {
+            first.make_ascii_uppercase();
+        }
+        label
+    }
+
+    fn format_bytes(bytes: u64) -> String {
+        const UNITS: [&str; 5] = ["B", "KiB", "MiB", "GiB", "TiB"];
+        let mut value = bytes as f64;
+        let mut unit = 0;
+        while value >= 1024.0 && unit < UNITS.len() - 1 {
+            value /= 1024.0;
+            unit += 1;
+        }
+        if unit == 0 {
+            format!("{} {}", bytes, UNITS[unit])
+        } else {
+            format!("{:.1} {}", value, UNITS[unit])
+        }
+    }
+
+    fn format_percent(ratio: f64) -> String {
+        format!("{:.1}%", ratio * 100.0)
+    }
+
+    fn summarize_value(value: &Value) -> String {
+        match value {
+            Value::Null => "n/a".to_string(),
+            Value::Bool(b) => b.to_string(),
+            Value::Number(num) => num.to_string(),
+            Value::String(text) => truncate(text),
+            Value::Array(arr) => format!("{} entries", arr.len()),
+            Value::Object(map) => format!("{} keys", map.len()),
+        }
+    }
+
+    fn truncate(input: &str) -> String {
+        if input.len() > 120 {
+            format!("{}…", &input[..117])
+        } else {
+            input.to_string()
+        }
     }
 }
 

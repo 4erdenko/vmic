@@ -20,7 +20,7 @@ VMIC is a modular Rust tool that produces human- and machine-readable system rep
 
 ## 4. Core Runtime & Rendering
 - ✅ Markdown rendering (Askama) and JSON serialization with metadata (timestamp, section count); Askama configured via crate-local `askama.toml`; JSON schema formalization is still pending.
-- ⚙️ HTML renderer available via `--format html` (writes timestamped HTML file); further rendering enhancements (e.g., additional templates) remain open.
+- ⚙️ HTML renderer exposed via `--format html` now renders a structured dashboard (tables/lists per section, health digest summary); further enhancements like alternate themes or drill-down views remain open.
 
 ## 5. Command-Line Interface
 - ✅ Clap-based CLI with Markdown/JSON modes; default build enables `journal` & `docker` modules while retaining feature flags for extensibility (`journal`, `docker`, module-specific feature toggles like `mod-docker/client`).

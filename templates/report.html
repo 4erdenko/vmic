@@ -123,27 +123,47 @@
             font-weight: 500;
         }
 
-        details {
-            border-top: 1px solid var(--border);
-            padding-top: 1rem;
+        dl.kv {
+            display: grid;
+            grid-template-columns: minmax(0, 200px) 1fr;
+            gap: 0.5rem 1.5rem;
+            margin: 0 0 1rem;
         }
 
-        details summary {
-            cursor: pointer;
+        dl.kv dt {
             font-weight: 600;
             color: var(--muted);
         }
 
-        pre {
-            background: rgba(15, 23, 42, 0.04);
-            padding: 1rem;
-            border-radius: 0.5rem;
-            overflow-x: auto;
-            font-size: 0.85rem;
+        dl.kv dd {
+            margin: 0;
         }
 
-        code {
-            font-family: "Fira Code", "SFMono-Regular", ui-monospace, "DejaVu Sans Mono", monospace;
+        table.data {
+            width: 100%;
+            border-collapse: collapse;
+            margin: 1rem 0;
+            font-size: 0.95rem;
+        }
+
+        table.data thead {
+            background: rgba(59, 130, 246, 0.08);
+        }
+
+        table.data th,
+        table.data td {
+            padding: 0.5rem 0.75rem;
+            border-bottom: 1px solid var(--border);
+            text-align: left;
+        }
+
+        table.data tbody tr:last-child td {
+            border-bottom: none;
+        }
+
+        ul.bullet {
+            margin: 0 0 1rem 1.25rem;
+            padding: 0;
         }
 
         .notes {
@@ -191,16 +211,62 @@
             </ul>
         {% endif %}
     </section>
-{% for section in report.sections %}
-    <section class="card status-{{ section.status }}">
+{% for section in sections %}
+    <section class="card status-{{ section.status_class }}">
         <div class="card-header">
             <h2>{{ section.title }}</h2>
-            <span class="badge">{{ section.status }}</span>
+            <span class="badge">{{ section.status_label }}</span>
         </div>
-        {% if section.summary.is_some() %}
-            <p class="summary">{{ section.summary.as_ref().unwrap() }}</p>
+        {% if let Some(summary) = section.summary %}
+            <p class="summary">{{ summary }}</p>
         {% endif %}
-        {% if section.has_notes() %}
+        {% if section.has_key_values %}
+            <dl class="kv">
+            {% for item in section.key_values %}
+                <div>
+                    <dt>{{ item.key }}</dt>
+                    <dd>{{ item.value }}</dd>
+                </div>
+            {% endfor %}
+            </dl>
+        {% endif %}
+        {% for table in section.tables %}
+            {% if let Some(title) = table.title %}
+                <h3>{{ title }}</h3>
+            {% endif %}
+            <table class="data">
+                <thead>
+                    <tr>
+                    {% for header in table.headers %}
+                        <th>{{ header }}</th>
+                    {% endfor %}
+                    </tr>
+                </thead>
+                <tbody>
+                {% for row in table.rows %}
+                    <tr>
+                    {% for cell in row %}
+                        <td>{{ cell }}</td>
+                    {% endfor %}
+                    </tr>
+                {% endfor %}
+                </tbody>
+            </table>
+        {% endfor %}
+        {% for list in section.lists %}
+            {% if let Some(title) = list.title %}
+                <h3>{{ title }}</h3>
+            {% endif %}
+            <ul class="bullet">
+            {% for item in list.items %}
+                <li>{{ item }}</li>
+            {% endfor %}
+            </ul>
+        {% endfor %}
+        {% if let Some(paragraph) = section.paragraph %}
+            <p>{{ paragraph }}</p>
+        {% endif %}
+        {% if section.has_notes %}
         <div class="notes">
             <h3>Notes</h3>
             <ul>
@@ -210,10 +276,6 @@
             </ul>
         </div>
         {% endif %}
-        <details>
-            <summary>Details</summary>
-            <pre><code>{{ section.body | json_pretty }}</code></pre>
-        </details>
     </section>
 {% endfor %}
 </main>
