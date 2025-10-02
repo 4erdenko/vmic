@@ -503,13 +503,11 @@ mod render {
         tables: Vec<TableView>,
         lists: Vec<ListView>,
         paragraph: Option<String>,
-        json_preview: Option<String>,
         duration_label: String,
         has_key_values: bool,
         has_tables: bool,
         has_lists: bool,
         has_notes: bool,
-        has_json_preview: bool,
         has_duration: bool,
     }
 
@@ -527,13 +525,11 @@ mod render {
                 tables: Vec::new(),
                 lists: Vec::new(),
                 paragraph: None,
-                json_preview: None,
                 duration_label,
                 has_key_values: false,
                 has_tables: false,
                 has_lists: false,
                 has_notes: !section.notes.is_empty(),
-                has_json_preview: false,
                 has_duration: section.duration_ms.is_some(),
             }
         }
@@ -563,7 +559,6 @@ mod render {
             self.has_tables = !self.tables.is_empty();
             self.has_lists = !self.lists.is_empty();
             self.has_notes = !self.notes.is_empty();
-            self.has_json_preview = self.json_preview.is_some();
             self.has_duration = !self.duration_label.is_empty();
         }
     }
@@ -603,7 +598,6 @@ mod render {
             .map(|section| {
                 let mut view = SectionView::new(section);
                 populate_section(&mut view, section.id, &section.body);
-                view.json_preview = build_json_preview(&section.body);
                 view.finalize();
                 view
             })
@@ -1586,25 +1580,6 @@ mod render {
                 view.paragraph = Some(b.to_string());
             }
             Value::Null => {}
-        }
-    }
-
-    const JSON_PREVIEW_LIMIT: usize = 2048;
-
-    fn build_json_preview(value: &Value) -> Option<String> {
-        match value {
-            Value::Null => None,
-            Value::Object(map) if map.is_empty() => None,
-            Value::Array(arr) if arr.is_empty() => None,
-            _ => serde_json::to_string_pretty(value)
-                .map(|mut text| {
-                    if text.len() > JSON_PREVIEW_LIMIT {
-                        text.truncate(JSON_PREVIEW_LIMIT);
-                        text.push_str("…");
-                    }
-                    text
-                })
-                .ok(),
         }
     }
 
