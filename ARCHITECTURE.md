@@ -34,9 +34,9 @@ VMIC is a modular Rust tool that produces human- and machine-readable system rep
 | `mod-proc` | `/proc` load, memory, swap | ✅ host/cgroup memory, PSI, zram plus top offender drill-down and PSI sparkline |
 | `mod-journal` | `journalctl --output=json` ingest | ✅ implemented |
 | `mod-docker` | Docker API via `bollard` (`tokio` runtime, feature `client`) | ✅ engine/info, per-container metrics, health status, and storage sizing |
-| `mod-users` | `/etc/passwd`, groups, shadow analysis | ✅ implemented |
-| `mod-cron` | cron tabs, system timers | ✅ implemented (system cron coverage) |
-| `mod-services` | init/systemd unit discovery (`systemctl`/D-Bus) | ✅ implemented (systemctl-based) |
+| `mod-users` | `/etc/passwd`, groups, sudo membership | ✅ Implemented |
+| `mod-cron` | system crontab + `/etc/cron.d` | ✅ Implemented |
+| `mod-services` | systemd unit status via `systemctl` | ✅ Implemented |
 | `mod-network` | interfaces, sockets, listening ports | ✅ socket→PID/cgroup mapping with grouped host/container listener summaries and hardening insights |
 | `mod-storage` | mounts, usage, heavy directories | ✅ operational vs pseudo FS split, inode tracking, Docker usage, heavy directory/log hotspots |
 | `mod-sar` | sysstat historical metrics (feature) | ✅ implemented (CPU averages) |
@@ -66,4 +66,14 @@ VMIC is a modular Rust tool that produces human- and machine-readable system rep
 - ✅ Disk usage drill-down (top directories/logs) for operational mounts.
 - ⏳ HTML UX refinements (navigation, collapsible sections, badges, tooltips, pseudo-FS "Noise" area).
 - ✅ Network insights: listener grouping, container correlation, service classification, and hardening heuristics.
-- 💤 Investigate `sar` ingestion and cross-platform container runtimes when demand appears.
+- 💤 Investigate extended `sar` ingestion and cross-runtime container coverage when demand appears.
+
+## 9. Additions Beyond Initial Plan
+- Centralized health digest with tunable thresholds and cross-section synthesis (storage/memory rules) beyond minimal aggregation.
+- HTML dashboard with structured section views (key-values, tables, lists, notes) and severity badges.
+- Security posture checks: SSH and sudoers heuristics plus cgroup v2 detection (warnings surfaced as degraded findings).
+- Storage drill-down: heavy directory and log hotspot sampling per operational mount; Docker storage breakdown (overlay, logs, volumes, total).
+- Network listener insights: wildcard binding and insecure/legacy service classification with socket→process→container correlation.
+- Journald SSH activity summary (invalid users, auth failures, top users/hosts) derived from recent journal entries.
+- Alternative container runtimes discovery (podman/nerdctl/ctr) for heterogeneous environments.
+- CLI ergonomics: multi-output selection, deterministic artifact naming with UTC timestamps, and environment overrides for digest thresholds (`VMIC_DIGEST_*`).
