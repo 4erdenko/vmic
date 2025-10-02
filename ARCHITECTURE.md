@@ -59,8 +59,8 @@ VMIC is a modular Rust tool that produces human- and machine-readable system rep
 - ⏳ CI automation (fmt/clippy/test matrix) intentionally deferred.
 
 ## 8. Future Enhancements
-- ⏳ Add HTML report template and aggregated HTML/JSON artifact generation.
-- ⏳ Define and publish a JSON schema for machine-readable reports.
+- ✅ Add HTML report template and aggregated HTML/JSON artifact generation.
+- ✅ Define and publish a JSON schema for machine-readable reports.
 - ⏳ Extend Docker module with container metrics, graceful fallback when daemon unreachable.
 - ⏳ Implement modular security checks (cgroups, sshd, sudoers) once core modules are stable.
 - 💤 Investigate `sar` ingestion and cross-platform container runtimes when demand appears.

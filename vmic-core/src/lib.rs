@@ -9,6 +9,8 @@ pub use health::{DigestThresholds, Severity};
 
 pub use vmic_sdk::{CollectionContext as Context, SectionStatus};
 
+pub mod schema;
+
 #[derive(Debug, Serialize)]
 pub struct ReportMetadata {
     pub generated_at: String,
@@ -1085,6 +1087,7 @@ mod render {
 #[cfg(test)]
 mod tests {
     use super::*;
+    use jsonschema::JSONSchema;
     use serde_json::json;
     use vmic_sdk::SectionStatus;
 
@@ -1120,6 +1123,25 @@ mod tests {
             .max()
             .unwrap_or(Severity::Info);
         assert_eq!(report.health_digest.overall, expected_overall);
+    }
+
+    #[test]
+    fn report_json_conforms_to_schema() {
+        let mut section = Section::success("demo", "Demo Section", json!({
+            "value": 42,
+        }));
+        section.summary = Some("Demo summary".to_string());
+
+        let report = Report::with_digest_config(vec![section], DigestThresholds::default());
+        let compiled = JSONSchema::compile(schema::report_schema()).expect("schema compilation");
+        let document = report.to_json_value();
+
+        if let Err(errors) = compiled.validate(&document) {
+            let collected: Vec<String> = errors
+                .map(|err| format!("{}", err))
+                .collect();
+            panic!("report JSON did not match schema:\n{}", collected.join("\n"));
+        }
     }
 
     #[test]

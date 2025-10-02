@@ -12,6 +12,7 @@ serde.workspace = true
 serde_json.workspace = true
 askama.workspace = true
 chrono.workspace = true
+once_cell.workspace = true
 vmic-sdk = { path = "../vmic-sdk" }
 
 [lints]
@@ -28,3 +29,4 @@ mod-services = { path = "../modules/mod-services" }
 mod-sar = { path = "../modules/mod-sar" }
 mod-containers = { path = "../modules/mod-containers" }
 vmic-sdk = { path = "../vmic-sdk" }
+jsonschema = "0.19.1"

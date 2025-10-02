@@ -1,0 +1,118 @@
+{
+  "$schema": "https://json-schema.org/draft/2020-12/schema",
+  "$id": "https://example.com/vmic/report.schema.json",
+  "title": "VMIC Report",
+  "description": "Machine-readable report produced by the VMIC diagnostics CLI.",
+  "type": "object",
+  "required": ["metadata", "sections"],
+  "additionalProperties": false,
+  "properties": {
+    "metadata": {
+      "$ref": "#/$defs/metadata"
+    },
+    "sections": {
+      "type": "array",
+      "description": "Collection of report sections produced by registered collectors.",
+      "items": {
+        "$ref": "#/$defs/section"
+      }
+    }
+  },
+  "$defs": {
+    "metadata": {
+      "type": "object",
+      "required": ["generated_at", "sections", "health_digest"],
+      "additionalProperties": false,
+      "properties": {
+        "generated_at": {
+          "type": "string",
+          "description": "UTC timestamp for when the report was generated, represented as seconds since the Unix epoch.",
+          "pattern": "^\\d+$"
+        },
+        "sections": {
+          "type": "integer",
+          "minimum": 0,
+          "description": "Number of sections included in the report."
+        },
+        "health_digest": {
+          "$ref": "#/$defs/health_digest"
+        }
+      }
+    },
+    "health_digest": {
+      "type": "object",
+      "required": ["overall", "findings"],
+      "additionalProperties": false,
+      "properties": {
+        "overall": {
+          "$ref": "#/$defs/severity"
+        },
+        "findings": {
+          "type": "array",
+          "items": {
+            "$ref": "#/$defs/critical_finding"
+          }
+        }
+      }
+    },
+    "critical_finding": {
+      "type": "object",
+      "required": ["source_id", "source_title", "severity", "message"],
+      "additionalProperties": false,
+      "properties": {
+        "source_id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "source_title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "severity": {
+          "$ref": "#/$defs/severity"
+        },
+        "message": {
+          "type": "string",
+          "minLength": 1
+        }
+      }
+    },
+    "severity": {
+      "type": "string",
+      "enum": ["info", "warning", "critical"]
+    },
+    "section": {
+      "type": "object",
+      "required": ["id", "title", "status", "body", "notes"],
+      "additionalProperties": false,
+      "properties": {
+        "id": {
+          "type": "string",
+          "minLength": 1
+        },
+        "title": {
+          "type": "string",
+          "minLength": 1
+        },
+        "status": {
+          "type": "string",
+          "enum": ["success", "degraded", "error"]
+        },
+        "summary": {
+          "type": "string"
+        },
+        "body": {
+          "type": "object",
+          "description": "Arbitrary structured data captured by the collector.",
+          "additionalProperties": true
+        },
+        "notes": {
+          "type": "array",
+          "items": {
+            "type": "string"
+          }
+        }
+      }
+    }
+  }
+}
