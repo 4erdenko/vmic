@@ -46,6 +46,7 @@ VMIC is a modular Rust tool that produces human- and machine-readable system rep
 ## 7. Build, Testing, and Tooling
 - ✅ Release profile tuned for size (`opt-level = "z"`, `lto = "thin"`, `panic = "abort"`, `strip = "symbols"`).
 - ✅ Formatting via `cargo fmt`; unit tests per crate; smoke tests via `cargo run` documented.
+- ✅ Release binary smoke-tested via `cargo build --release` followed by running `vmic --format json`.
 - ⏳ CI automation (fmt/clippy/test matrix) intentionally deferred.
 
 ## 8. Future Enhancements
