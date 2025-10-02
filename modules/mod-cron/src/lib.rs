@@ -125,9 +125,28 @@ fn parse_cron_line(line: &str) -> Result<CronEntry> {
     }
 
     let mut parts = trimmed.split_whitespace();
-    let minute = parts
+    let first = parts
         .next()
-        .ok_or_else(|| anyhow::anyhow!("missing minute"))?;
+        .ok_or_else(|| anyhow::anyhow!("missing schedule"))?;
+
+    if first.starts_with('@') {
+        let user = parts
+            .next()
+            .ok_or_else(|| anyhow::anyhow!("missing user"))?;
+        let command = parts.collect::<Vec<_>>().join(" ");
+
+        if command.is_empty() {
+            anyhow::bail!("missing command");
+        }
+
+        return Ok(CronEntry {
+            schedule: first.to_string(),
+            user: user.to_string(),
+            command,
+        });
+    }
+
+    let minute = first;
     let hour = parts
         .next()
         .ok_or_else(|| anyhow::anyhow!("missing hour"))?;
@@ -178,6 +197,22 @@ mod tests {
         assert_eq!(entry.user, "root");
         assert!(entry.command.contains("run-backup"));
         assert!(entry.schedule.starts_with("0 5"));
+    }
+
+    #[test]
+    fn parse_cron_line_supports_macros() {
+        let line = "@daily root /usr/local/bin/backup";
+        let entry = parse_cron_line(line).expect("parsed macro cron");
+        assert_eq!(entry.schedule, "@daily");
+        assert_eq!(entry.user, "root");
+        assert_eq!(entry.command, "/usr/local/bin/backup");
+    }
+
+    #[test]
+    fn parse_cron_line_rejects_macro_without_command() {
+        let line = "@reboot root";
+        let error = parse_cron_line(line).expect_err("missing macro command");
+        assert!(error.to_string().contains("missing command"));
     }
 
     #[test]
