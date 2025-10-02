@@ -1,0 +1,221 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+    <meta charset="utf-8">
+    <title>VMIC System Report</title>
+    <style>
+        :root {
+            color-scheme: light dark;
+            --bg: #f9fafb;
+            --fg: #111827;
+            --muted: #6b7280;
+            --card-bg: #ffffff;
+            --border: #e5e7eb;
+            --success: #047857;
+            --degraded: #b45309;
+            --error: #b91c1c;
+        }
+
+        @media (prefers-color-scheme: dark) {
+            :root {
+                --bg: #111827;
+                --fg: #f9fafb;
+                --muted: #9ca3af;
+                --card-bg: #1f2937;
+                --border: #374151;
+            }
+        }
+
+        body {
+            margin: 0;
+            font-family: system-ui, -apple-system, "Segoe UI", sans-serif;
+            background: var(--bg);
+            color: var(--fg);
+        }
+
+        header {
+            padding: 2.5rem 1.5rem 1rem;
+            max-width: 960px;
+            margin: 0 auto;
+        }
+
+        header h1 {
+            margin: 0 0 0.5rem;
+            font-size: 2.25rem;
+            font-weight: 700;
+        }
+
+        .meta {
+            display: flex;
+            flex-wrap: wrap;
+            gap: 1rem;
+            color: var(--muted);
+            font-size: 0.95rem;
+        }
+
+        main {
+            max-width: 960px;
+            margin: 0 auto 2rem;
+            padding: 0 1.5rem 2rem;
+            display: grid;
+            gap: 1.5rem;
+        }
+
+        .digest-list {
+            list-style: none;
+            padding: 0;
+            margin: 1rem 0 0;
+        }
+
+        .digest-list li {
+            padding: 0.5rem 0;
+            border-top: 1px solid var(--border);
+        }
+
+        .digest-list li:first-child {
+            border-top: none;
+        }
+
+        .digest-severity {
+            font-weight: 600;
+            margin-right: 0.5rem;
+        }
+
+        section.card {
+            background: var(--card-bg);
+            border: 1px solid var(--border);
+            border-radius: 0.75rem;
+            padding: 1.5rem;
+            box-shadow: 0 10px 25px rgba(15, 23, 42, 0.05);
+        }
+
+        .card-header {
+            display: flex;
+            align-items: baseline;
+            justify-content: space-between;
+            gap: 1rem;
+            margin-bottom: 0.75rem;
+        }
+
+        .card-header h2 {
+            margin: 0;
+            font-size: 1.4rem;
+        }
+
+        .badge {
+            padding: 0.25rem 0.75rem;
+            border-radius: 999px;
+            font-size: 0.85rem;
+            font-weight: 600;
+            text-transform: uppercase;
+            letter-spacing: 0.03em;
+            background: var(--border);
+            color: var(--muted);
+        }
+
+        .status-success .badge { background: rgba(4, 120, 87, 0.15); color: var(--success); }
+        .status-degraded .badge { background: rgba(180, 83, 9, 0.15); color: var(--degraded); }
+        .status-error .badge { background: rgba(185, 28, 28, 0.15); color: var(--error); }
+
+        .summary {
+            margin: 0 0 1rem;
+            color: var(--fg);
+            font-weight: 500;
+        }
+
+        details {
+            border-top: 1px solid var(--border);
+            padding-top: 1rem;
+        }
+
+        details summary {
+            cursor: pointer;
+            font-weight: 600;
+            color: var(--muted);
+        }
+
+        pre {
+            background: rgba(15, 23, 42, 0.04);
+            padding: 1rem;
+            border-radius: 0.5rem;
+            overflow-x: auto;
+            font-size: 0.85rem;
+        }
+
+        code {
+            font-family: "Fira Code", "SFMono-Regular", ui-monospace, "DejaVu Sans Mono", monospace;
+        }
+
+        .notes {
+            margin: 1rem 0;
+            padding: 1rem;
+            border-radius: 0.5rem;
+            background: rgba(59, 130, 246, 0.08);
+        }
+
+        .notes h3 {
+            margin: 0 0 0.5rem;
+            font-size: 1rem;
+        }
+
+        .notes ul {
+            margin: 0;
+            padding-left: 1.25rem;
+        }
+    </style>
+</head>
+<body>
+<header>
+    <h1>System Report</h1>
+    <div class="meta">
+        <span>Generated: {{ report.metadata.generated_at_iso8601() }}</span>
+        <span>Sections: {{ report.metadata.sections }}</span>
+    </div>
+</header>
+<main>
+    <section class="card status-{{ report.health_digest.overall.as_str() }}">
+        <div class="card-header">
+            <h2>Critical Health Digest</h2>
+            <span class="badge">Overall Status: {{ report.health_digest.overall.display_label() }}</span>
+        </div>
+        {% if report.health_digest.findings.is_empty() %}
+            <p class="summary">No critical findings detected.</p>
+        {% else %}
+            <ul class="digest-list">
+            {% for finding in report.health_digest.findings %}
+                <li>
+                    <span class="digest-severity">{{ finding.severity.display_label() }}</span>
+                    <span>{{ finding.source_title }} — {{ finding.message }}</span>
+                </li>
+            {% endfor %}
+            </ul>
+        {% endif %}
+    </section>
+{% for section in report.sections %}
+    <section class="card status-{{ section.status }}">
+        <div class="card-header">
+            <h2>{{ section.title }}</h2>
+            <span class="badge">{{ section.status }}</span>
+        </div>
+        {% if section.summary.is_some() %}
+            <p class="summary">{{ section.summary.as_ref().unwrap() }}</p>
+        {% endif %}
+        {% if section.has_notes() %}
+        <div class="notes">
+            <h3>Notes</h3>
+            <ul>
+            {% for note in section.notes %}
+                <li>{{ note }}</li>
+            {% endfor %}
+            </ul>
+        </div>
+        {% endif %}
+        <details>
+            <summary>Details</summary>
+            <pre><code>{{ section.body | json_pretty }}</code></pre>
+        </details>
+    </section>
+{% endfor %}
+</main>
+</body>
+</html>

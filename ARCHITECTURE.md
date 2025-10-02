@@ -20,12 +20,12 @@ VMIC is a modular Rust tool that produces human- and machine-readable system rep
 
 ## 4. Core Runtime & Rendering
 - ✅ Markdown rendering (Askama) and JSON serialization with metadata (timestamp, section count); Askama configured via crate-local `askama.toml`; JSON schema formalization is still pending.
-- ⏳ HTML renderer (secondary template) and extended CLI flags (e.g., `--output html`, `--since`) remain to be implemented.
+- ⚙️ HTML renderer available via `--format html` (writes timestamped HTML file); extended CLI flags like `--since` remain.
 
 ## 5. Command-Line Interface
 - ✅ Clap-based CLI with Markdown/JSON modes; default build enables `journal` & `docker` modules while retaining feature flags for extensibility (`journal`, `docker`, module-specific feature toggles like `mod-docker/client`).
 - ✅ Builds default to the musl target with `crt-static` via `.cargo/config.toml`.
-- ⏳ Additional flags from original plan (`--since`, dual format generation, configurable output path) pending.
+- ⚙️ Added `--format html` for file-based HTML output; remaining flags (`--since`, dual-format emission, configurable output path) pending.
 
 ## 6. Modules
 | Module | Scope | Status |
@@ -43,6 +43,15 @@ VMIC is a modular Rust tool that produces human- and machine-readable system rep
 | `mod-containers` | Podman/containerd (feature; e.g., `podman`, `containerd`) | ✅ implemented (runtime detection) |
 | Security posture | sudoers, sshd_config, cgroups v2 | 💤 future optional |
 
+## 6.1 Cross-Module Health Digest
+- ✅ Introduced a centralized "Critical Health Digest" in `vmic-core` that aggregates high-severity findings from all sections.
+- ✅ Digest surfaces section errors/degradations automatically and flags module-specific alerts (e.g., disk usage >90%, low memory) using explicit rules.
+- ✅ Exposed digest at the top of JSON/Markdown/HTML outputs with succinct severity badges.
+- ⚙️ Allow operators to tune digest thresholds via CLI flags/env (
+  - `storage.disk_warning`/`storage.disk_critical` usage ratios, default 90%/95%
+  - `memory.warning`/`memory.critical` available-memory ratios, default 10%/5%
+  ) while keeping sensible defaults documented.
+
 ## 7. Build, Testing, and Tooling
 - ✅ Release profile tuned for size (`opt-level = "z"`, `lto = "thin"`, `panic = "abort"`, `strip = "symbols"`).
 - ✅ Formatting via `cargo fmt`; unit tests per crate; smoke tests via `cargo run` documented.
@@ -55,4 +64,3 @@ VMIC is a modular Rust tool that produces human- and machine-readable system rep
 - ⏳ Extend Docker module with container metrics, graceful fallback when daemon unreachable.
 - ⏳ Implement modular security checks (cgroups, sshd, sudoers) once core modules are stable.
 - 💤 Investigate `sar` ingestion and cross-platform container runtimes when demand appears.
-

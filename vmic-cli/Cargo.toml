@@ -10,6 +10,7 @@ repository.workspace = true
 anyhow.workspace = true
 clap.workspace = true
 serde_json.workspace = true
+chrono.workspace = true
 vmic-core = { path = "../vmic-core" }
 mod-os = { path = "../modules/mod-os" }
 mod-proc = { path = "../modules/mod-proc" }
