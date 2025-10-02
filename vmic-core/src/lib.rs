@@ -184,8 +184,8 @@ mod health {
     impl Default for DigestThresholds {
         fn default() -> Self {
             Self {
-                disk_warning: 0.90,
-                disk_critical: 0.95,
+                disk_warning: 0.80,
+                disk_critical: 0.90,
                 memory_warning: 0.10,
                 memory_critical: 0.05,
             }
@@ -274,7 +274,7 @@ mod health {
 
         let mounts = section
             .body
-            .get("mounts")
+            .get("operating_mounts")
             .and_then(Value::as_array)
             .cloned()
             .unwrap_or_default();
@@ -283,22 +283,93 @@ mod health {
             let Some(point) = mount.get("mount_point").and_then(Value::as_str) else {
                 continue;
             };
+            let operational = mount
+                .get("operational")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            if !operational {
+                continue;
+            }
+
             let Some(ratio) = mount.get("usage_ratio").and_then(Value::as_f64) else {
                 continue;
             };
 
-            let severity = if ratio >= thresholds.disk_critical {
-                Some(Severity::Critical)
-            } else if ratio >= thresholds.disk_warning {
-                Some(Severity::Warning)
-            } else {
-                None
-            };
-
-            if let Some(severity) = severity {
-                let message = format!("Mount {} at {:.1}% capacity", point, ratio * 100.0);
-                findings.push(CriticalFinding::new(section, severity, message));
+            let read_only = mount
+                .get("read_only")
+                .and_then(Value::as_bool)
+                .unwrap_or(false);
+            if read_only {
+                continue;
             }
+
+            let fs_type = mount.get("fs_type").and_then(Value::as_str).unwrap_or("");
+
+            let available_bytes = mount
+                .get("available_bytes")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            let free_gib = available_bytes as f64 / (1024.0 * 1024.0 * 1024.0);
+
+            let inodes_ratio = mount
+                .get("inodes_usage_ratio")
+                .and_then(Value::as_f64)
+                .unwrap_or(0.0);
+
+            let mut severity = Severity::Info;
+            let mut reasons: Vec<String> = Vec::new();
+
+            fn escalate(current: &mut Severity, new: Severity) {
+                if new > *current {
+                    *current = new;
+                }
+            }
+
+            if ratio >= thresholds.disk_critical {
+                escalate(&mut severity, Severity::Critical);
+                reasons.push(format!("usage {:.1}%", ratio * 100.0));
+            } else if ratio >= thresholds.disk_warning {
+                escalate(&mut severity, Severity::Warning);
+                reasons.push(format!("usage {:.1}%", ratio * 100.0));
+            }
+
+            if free_gib <= 2.0 {
+                escalate(&mut severity, Severity::Critical);
+                reasons.push(format!("free space {:.2} GiB", free_gib));
+            } else if free_gib <= 5.0 {
+                escalate(&mut severity, Severity::Warning);
+                reasons.push(format!("free space {:.2} GiB", free_gib));
+            }
+
+            if inodes_ratio >= 0.90 {
+                escalate(&mut severity, Severity::Critical);
+                reasons.push(format!("inode usage {:.1}%", inodes_ratio * 100.0));
+            } else if inodes_ratio >= 0.80 {
+                escalate(&mut severity, Severity::Warning);
+                reasons.push(format!("inode usage {:.1}%", inodes_ratio * 100.0));
+            }
+
+            if matches!(point, "/boot" | "/boot/efi") {
+                if free_gib <= 0.25 {
+                    escalate(&mut severity, Severity::Critical);
+                    reasons.push("boot volume nearly full".to_string());
+                } else if free_gib <= 0.5 {
+                    escalate(&mut severity, Severity::Warning);
+                    reasons.push("boot volume low free space".to_string());
+                }
+            }
+
+            if severity == Severity::Info {
+                continue;
+            }
+
+            let mut message = format!("Mount {} ({}): {:.1}% used", point, fs_type, ratio * 100.0);
+            if !reasons.is_empty() {
+                message.push_str(" — ");
+                message.push_str(&reasons.join(", "));
+            }
+
+            findings.push(CriticalFinding::new(section, severity, message));
         }
     }
 
@@ -311,34 +382,78 @@ mod health {
             return;
         }
 
-        let Some(memory) = section.body.get("memory_kb") else {
+        let Some(memory) = section.body.get("memory").and_then(Value::as_object) else {
             return;
         };
 
-        let total = memory.get("total").and_then(Value::as_u64).unwrap_or(0);
-        let available = memory.get("available").and_then(Value::as_u64).unwrap_or(0);
+        if let Some(host) = memory.get("host").and_then(Value::as_object) {
+            let total = host.get("total_bytes").and_then(Value::as_u64).unwrap_or(0);
+            let available = host
+                .get("available_bytes")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
 
-        if total == 0 {
-            return;
+            if total > 0 {
+                let ratio = available as f64 / total as f64;
+                let severity = if ratio <= thresholds.memory_critical {
+                    Some(Severity::Critical)
+                } else if ratio <= thresholds.memory_warning {
+                    Some(Severity::Warning)
+                } else {
+                    None
+                };
+
+                if let Some(severity) = severity {
+                    let available_gib = available as f64 / (1024.0 * 1024.0 * 1024.0);
+                    let message = format!(
+                        "Host memory {:.1}% available ({:.2} GiB free)",
+                        ratio * 100.0,
+                        available_gib
+                    );
+                    findings.push(CriticalFinding::new(section, severity, message));
+                }
+            }
         }
 
-        let ratio = available as f64 / total as f64;
+        if let Some(cgroup) = memory.get("cgroup").and_then(Value::as_object) {
+            let limit = cgroup
+                .get("limit_bytes")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            let usage = cgroup
+                .get("usage_bytes")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
 
-        let severity = if ratio <= thresholds.memory_critical {
-            Some(Severity::Critical)
-        } else if ratio <= thresholds.memory_warning {
-            Some(Severity::Warning)
-        } else {
-            None
-        };
+            if limit > 0 {
+                let remaining_ratio = if usage >= limit {
+                    0.0
+                } else {
+                    (limit - usage) as f64 / limit as f64
+                };
 
-        if let Some(severity) = severity {
-            let message = format!(
-                "Available memory {:.1}% of total ({} MiB free)",
-                ratio * 100.0,
-                available / 1024
-            );
-            findings.push(CriticalFinding::new(section, severity, message));
+                let severity = if remaining_ratio <= thresholds.memory_critical {
+                    Some(Severity::Critical)
+                } else if remaining_ratio <= thresholds.memory_warning {
+                    Some(Severity::Warning)
+                } else {
+                    None
+                };
+
+                if let Some(severity) = severity {
+                    let remaining_gib = if usage >= limit {
+                        0.0
+                    } else {
+                        (limit - usage) as f64 / (1024.0 * 1024.0 * 1024.0)
+                    };
+                    let message = format!(
+                        "Cgroup memory {:.1}% headroom ({:.2} GiB free of limit)",
+                        remaining_ratio * 100.0,
+                        remaining_gib
+                    );
+                    findings.push(CriticalFinding::new(section, severity, message));
+                }
+            }
         }
     }
 }
@@ -529,56 +644,256 @@ mod render {
             }
         }
 
-        if let Some(memory) = body.get("memory_kb").and_then(Value::as_object) {
-            if let Some(total) = memory.get("total").and_then(Value::as_u64) {
-                view.add_kv("Memory Total", format_bytes(total * 1024));
+        if let Some(memory) = body.get("memory").and_then(Value::as_object) {
+            if let Some(host) = memory.get("host").and_then(Value::as_object) {
+                if let Some(total) = host.get("total_bytes").and_then(Value::as_u64) {
+                    view.add_kv("Host Memory Total", format_bytes(total));
+                }
+                if let Some(available) = host.get("available_bytes").and_then(Value::as_u64) {
+                    let mut value = format_bytes(available);
+                    if let Some(ratio) = host.get("usage_ratio").and_then(Value::as_f64) {
+                        value = format!(
+                            "{} free ({:.1}% used)",
+                            format_bytes(available),
+                            ratio * 100.0
+                        );
+                    }
+                    view.add_kv("Host Memory", value);
+                }
             }
-            if let (Some(total), Some(available)) = (
-                memory.get("total").and_then(Value::as_u64),
-                memory.get("available").and_then(Value::as_u64),
-            ) {
-                let ratio = if total > 0 {
-                    Some(available as f64 / total as f64)
-                } else {
-                    None
-                };
-                let value = if let Some(ratio) = ratio {
-                    format!(
-                        "{} ({})",
-                        format_bytes(available * 1024),
-                        format_percent(ratio)
-                    )
-                } else {
-                    format_bytes(available * 1024)
-                };
-                view.add_kv("Memory Available", value);
+
+            if let Some(cgroup) = memory.get("cgroup").and_then(Value::as_object) {
+                if let Some(limit) = cgroup.get("limit_bytes").and_then(Value::as_u64) {
+                    view.add_kv("Cgroup Limit", format_bytes(limit));
+                }
+                if let (Some(usage), Some(limit)) = (
+                    cgroup.get("usage_bytes").and_then(Value::as_u64),
+                    cgroup.get("limit_bytes").and_then(Value::as_u64),
+                ) {
+                    let remaining = limit.saturating_sub(usage);
+                    let ratio = if limit > 0 {
+                        format_percent(remaining as f64 / limit as f64)
+                    } else {
+                        "n/a".to_string()
+                    };
+                    view.add_kv(
+                        "Cgroup Remaining",
+                        format!("{} ({})", format_bytes(remaining), ratio),
+                    );
+                }
+            }
+
+            if let Some(swap) = memory.get("swap").and_then(Value::as_object) {
+                if let Some(total) = swap.get("total_bytes").and_then(Value::as_u64) {
+                    view.add_kv("Swap Total", format_bytes(total));
+                }
+                if let Some(free) = swap.get("free_bytes").and_then(Value::as_u64) {
+                    view.add_kv("Swap Free", format_bytes(free));
+                }
+
+                if let Some(devices) = swap.get("devices").and_then(Value::as_array) {
+                    if !devices.is_empty() {
+                        let rows: Vec<Vec<String>> = devices
+                            .iter()
+                            .take(6)
+                            .map(|device| {
+                                vec![
+                                    device
+                                        .get("name")
+                                        .and_then(Value::as_str)
+                                        .unwrap_or("-")
+                                        .to_string(),
+                                    device
+                                        .get("kind")
+                                        .and_then(Value::as_str)
+                                        .unwrap_or("-")
+                                        .to_string(),
+                                    device
+                                        .get("priority")
+                                        .and_then(Value::as_i64)
+                                        .map(|p| p.to_string())
+                                        .unwrap_or_else(|| "0".to_string()),
+                                    device
+                                        .get("used_bytes")
+                                        .and_then(Value::as_u64)
+                                        .map(format_bytes)
+                                        .unwrap_or_else(|| "-".to_string()),
+                                    device
+                                        .get("size_bytes")
+                                        .and_then(Value::as_u64)
+                                        .map(format_bytes)
+                                        .unwrap_or_else(|| "-".to_string()),
+                                ]
+                            })
+                            .collect();
+
+                        view.add_table(TableView {
+                            title: Some("Swap Devices".to_string()),
+                            headers: vec![
+                                "Device".to_string(),
+                                "Type".to_string(),
+                                "Priority".to_string(),
+                                "Used".to_string(),
+                                "Size".to_string(),
+                            ],
+                            rows,
+                        });
+                    }
+                }
+
+                if let Some(zram) = swap.get("zram_devices").and_then(Value::as_array) {
+                    if !zram.is_empty() {
+                        let rows: Vec<Vec<String>> = zram
+                            .iter()
+                            .take(6)
+                            .map(|device| {
+                                vec![
+                                    device
+                                        .get("name")
+                                        .and_then(Value::as_str)
+                                        .unwrap_or("-")
+                                        .to_string(),
+                                    device
+                                        .get("disksize_bytes")
+                                        .and_then(Value::as_u64)
+                                        .map(format_bytes)
+                                        .unwrap_or_else(|| "-".to_string()),
+                                    device
+                                        .get("compressed_bytes")
+                                        .and_then(Value::as_u64)
+                                        .map(format_bytes)
+                                        .unwrap_or_else(|| "-".to_string()),
+                                    device
+                                        .get("active")
+                                        .and_then(Value::as_bool)
+                                        .map(|flag| if flag { "yes" } else { "no" }.to_string())
+                                        .unwrap_or_else(|| "no".to_string()),
+                                ]
+                            })
+                            .collect();
+
+                        view.add_table(TableView {
+                            title: Some("ZRAM Devices".to_string()),
+                            headers: vec![
+                                "Device".to_string(),
+                                "Configured".to_string(),
+                                "Compressed".to_string(),
+                                "Active".to_string(),
+                            ],
+                            rows,
+                        });
+                    }
+                }
             }
         }
 
-        if let Some(swap) = body.get("swap_kb").and_then(Value::as_object) {
-            if let Some(total) = swap.get("total").and_then(Value::as_u64) {
-                view.add_kv("Swap Total", format_bytes(total * 1024));
+        if let Some(psi) = body.get("psi").and_then(Value::as_object) {
+            let mut rows = Vec::new();
+            if let Some(cpu) = psi.get("cpu").and_then(Value::as_object) {
+                if let Some(metrics) = cpu.get("some").and_then(Value::as_object) {
+                    rows.push(vec![
+                        "CPU (some)".to_string(),
+                        metrics
+                            .get("avg10")
+                            .and_then(Value::as_f64)
+                            .map(|v| format!("{:.2}", v))
+                            .unwrap_or_else(|| "-".to_string()),
+                        metrics
+                            .get("avg60")
+                            .and_then(Value::as_f64)
+                            .map(|v| format!("{:.2}", v))
+                            .unwrap_or_else(|| "-".to_string()),
+                        metrics
+                            .get("avg300")
+                            .and_then(Value::as_f64)
+                            .map(|v| format!("{:.2}", v))
+                            .unwrap_or_else(|| "-".to_string()),
+                    ]);
+                }
             }
-            if let Some(free) = swap.get("free").and_then(Value::as_u64) {
-                view.add_kv("Swap Free", format_bytes(free * 1024));
+            for key in ["memory", "io"] {
+                if let Some(resource) = psi.get(key).and_then(Value::as_object) {
+                    if let Some(metrics) = resource.get("some").and_then(Value::as_object) {
+                        rows.push(vec![
+                            format!("{} (some)", key),
+                            metrics
+                                .get("avg10")
+                                .and_then(Value::as_f64)
+                                .map(|v| format!("{:.2}", v))
+                                .unwrap_or_else(|| "-".to_string()),
+                            metrics
+                                .get("avg60")
+                                .and_then(Value::as_f64)
+                                .map(|v| format!("{:.2}", v))
+                                .unwrap_or_else(|| "-".to_string()),
+                            metrics
+                                .get("avg300")
+                                .and_then(Value::as_f64)
+                                .map(|v| format!("{:.2}", v))
+                                .unwrap_or_else(|| "-".to_string()),
+                        ]);
+                    }
+                    if let Some(metrics) = resource.get("full").and_then(Value::as_object) {
+                        rows.push(vec![
+                            format!("{} (full)", key),
+                            metrics
+                                .get("avg10")
+                                .and_then(Value::as_f64)
+                                .map(|v| format!("{:.2}", v))
+                                .unwrap_or_else(|| "-".to_string()),
+                            metrics
+                                .get("avg60")
+                                .and_then(Value::as_f64)
+                                .map(|v| format!("{:.2}", v))
+                                .unwrap_or_else(|| "-".to_string()),
+                            metrics
+                                .get("avg300")
+                                .and_then(Value::as_f64)
+                                .map(|v| format!("{:.2}", v))
+                                .unwrap_or_else(|| "-".to_string()),
+                        ]);
+                    }
+                }
+            }
+
+            if !rows.is_empty() {
+                view.add_table(TableView {
+                    title: Some("Pressure Stall (avg%)".to_string()),
+                    headers: vec![
+                        "Resource".to_string(),
+                        "avg10".to_string(),
+                        "avg60".to_string(),
+                        "avg300".to_string(),
+                    ],
+                    rows,
+                });
             }
         }
     }
 
     fn populate_storage(view: &mut SectionView, body: &Value) {
-        if let Some(mounts) = body.get("mounts").and_then(Value::as_array) {
+        if let Some(mounts) = body.get("operating_mounts").and_then(Value::as_array) {
             let mut entries: Vec<(f64, Vec<String>)> = mounts
                 .iter()
                 .filter_map(|mount| {
                     let mount_point = mount.get("mount_point")?.as_str()?.to_string();
                     let fs_type = mount.get("fs_type").and_then(Value::as_str).unwrap_or("-");
+                    let read_only = if mount
+                        .get("read_only")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false)
+                    {
+                        "ro"
+                    } else {
+                        "rw"
+                    };
                     let used = mount
                         .get("used_bytes")
                         .and_then(Value::as_u64)
                         .map(format_bytes)
                         .unwrap_or_else(|| "-".to_string());
-                    let total = mount
-                        .get("total_bytes")
+                    let free = mount
+                        .get("available_bytes")
                         .and_then(Value::as_u64)
                         .map(format_bytes)
                         .unwrap_or_else(|| "-".to_string());
@@ -587,26 +902,66 @@ mod render {
                         .and_then(Value::as_f64)
                         .unwrap_or(0.0);
                     let usage = format_percent(ratio);
+                    let inode_ratio = mount
+                        .get("inodes_usage_ratio")
+                        .and_then(Value::as_f64)
+                        .map(|ratio| format_percent(ratio))
+                        .unwrap_or_else(|| "n/a".to_string());
+
                     Some((
                         ratio,
-                        vec![mount_point, fs_type.to_string(), used, total, usage],
+                        vec![
+                            mount_point,
+                            fs_type.to_string(),
+                            read_only.to_string(),
+                            used,
+                            free,
+                            usage,
+                            inode_ratio,
+                        ],
                     ))
                 })
                 .collect();
 
             entries.sort_by(|a, b| b.0.partial_cmp(&a.0).unwrap_or(Ordering::Equal));
-            let rows: Vec<Vec<String>> = entries.into_iter().map(|(_, row)| row).take(10).collect();
+            let rows: Vec<Vec<String>> = entries.into_iter().map(|(_, row)| row).take(12).collect();
 
             if !rows.is_empty() {
                 view.add_table(TableView {
-                    title: Some("Top Mounts".to_string()),
+                    title: Some("Operating Mounts".to_string()),
                     headers: vec![
                         "Mount".to_string(),
                         "FS".to_string(),
+                        "Mode".to_string(),
                         "Used".to_string(),
-                        "Total".to_string(),
+                        "Free".to_string(),
                         "Usage".to_string(),
+                        "Inodes".to_string(),
                     ],
+                    rows,
+                });
+            }
+        }
+
+        if let Some(mounts) = body.get("pseudo_mounts").and_then(Value::as_array) {
+            let mut rows = Vec::new();
+            for mount in mounts.iter().take(12) {
+                let mount_point = mount
+                    .get("mount_point")
+                    .and_then(Value::as_str)
+                    .unwrap_or("-");
+                let fs_type = mount.get("fs_type").and_then(Value::as_str).unwrap_or("-");
+                let usage = mount
+                    .get("usage_ratio")
+                    .and_then(Value::as_f64)
+                    .map(format_percent)
+                    .unwrap_or_else(|| "n/a".to_string());
+                rows.push(vec![mount_point.to_string(), fs_type.to_string(), usage]);
+            }
+            if !rows.is_empty() {
+                view.add_table(TableView {
+                    title: Some("Images & Pseudo FS".to_string()),
+                    headers: vec!["Mount".to_string(), "FS".to_string(), "Usage".to_string()],
                     rows,
                 });
             }
@@ -621,6 +976,26 @@ mod render {
             }
             if let Some(available) = totals.get("available_bytes").and_then(Value::as_u64) {
                 view.add_kv("Available", format_bytes(available));
+            }
+        }
+
+        if let Some(docker) = body.get("docker").and_then(Value::as_object) {
+            let root = docker
+                .get("data_root")
+                .and_then(Value::as_str)
+                .unwrap_or("/var/lib/docker");
+            view.add_kv("Docker data root", root.to_string());
+            if let Some(total) = docker.get("total_bytes").and_then(Value::as_u64) {
+                view.add_kv("Docker total", format_bytes(total));
+            }
+            if let Some(diff) = docker.get("overlay_bytes").and_then(Value::as_u64) {
+                view.add_kv("Overlay diff", format_bytes(diff));
+            }
+            if let Some(logs) = docker.get("container_logs_bytes").and_then(Value::as_u64) {
+                view.add_kv("Container logs", format_bytes(logs));
+            }
+            if let Some(volumes) = docker.get("volumes_bytes").and_then(Value::as_u64) {
+                view.add_kv("Volumes", format_bytes(volumes));
             }
         }
     }
@@ -769,7 +1144,42 @@ mod render {
                             .get("state")
                             .and_then(Value::as_str)
                             .unwrap_or("listening");
-                        format!("{proto} {addr} ({state})")
+                        let proc_details: Vec<String> = sample
+                            .get("processes")
+                            .and_then(Value::as_array)
+                            .map(|processes| {
+                                processes
+                                    .iter()
+                                    .take(3)
+                                    .map(|proc| {
+                                        let pid =
+                                            proc.get("pid").and_then(Value::as_i64).unwrap_or(-1);
+                                        let command = proc
+                                            .get("command")
+                                            .and_then(Value::as_str)
+                                            .unwrap_or("?");
+                                        let uid =
+                                            proc.get("uid").and_then(Value::as_u64).unwrap_or(0);
+                                        let container = proc
+                                            .get("container")
+                                            .and_then(Value::as_str)
+                                            .unwrap_or("");
+                                        if container.is_empty() {
+                                            format!("pid {pid} {command} (uid {uid})")
+                                        } else {
+                                            format!(
+                                                "pid {pid} {command} (uid {uid}, cgroup {container})"
+                                            )
+                                        }
+                                    })
+                                    .collect::<Vec<_>>()
+                            })
+                            .unwrap_or_default();
+                        if proc_details.is_empty() {
+                            format!("{proto} {addr} ({state})")
+                        } else {
+                            format!("{proto} {addr} ({state}) — {}", proc_details.join(", "))
+                        }
                     })
                     .collect();
                 if !items.is_empty() {
@@ -783,6 +1193,55 @@ mod render {
     }
 
     fn populate_journal(view: &mut SectionView, body: &Value) {
+        if let Some(summary) = body.get("ssh_summary").and_then(Value::as_object) {
+            let invalid = summary
+                .get("invalid_user_count")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            let failures = summary
+                .get("auth_failure_count")
+                .and_then(Value::as_u64)
+                .unwrap_or(0);
+            view.add_kv("SSH invalid users", invalid.to_string());
+            view.add_kv("SSH auth failures", failures.to_string());
+
+            if let Some(hosts) = summary.get("top_hosts").and_then(Value::as_array) {
+                if !hosts.is_empty() {
+                    let items: Vec<String> = hosts
+                        .iter()
+                        .take(5)
+                        .map(|entry| {
+                            let name = entry.get("name").and_then(Value::as_str).unwrap_or("-");
+                            let count = entry.get("count").and_then(Value::as_u64).unwrap_or(0);
+                            format!("{name} ({count})")
+                        })
+                        .collect();
+                    view.add_list(ListView {
+                        title: Some("Top SSH source IPs".to_string()),
+                        items,
+                    });
+                }
+            }
+
+            if let Some(users) = summary.get("top_usernames").and_then(Value::as_array) {
+                if !users.is_empty() {
+                    let items: Vec<String> = users
+                        .iter()
+                        .take(5)
+                        .map(|entry| {
+                            let name = entry.get("name").and_then(Value::as_str).unwrap_or("-");
+                            let count = entry.get("count").and_then(Value::as_u64).unwrap_or(0);
+                            format!("{name} ({count})")
+                        })
+                        .collect();
+                    view.add_list(ListView {
+                        title: Some("Top SSH usernames".to_string()),
+                        items,
+                    });
+                }
+            }
+        }
+
         if let Some(entries) = body.get("entries").and_then(Value::as_array) {
             let items: Vec<String> = entries
                 .iter()
@@ -962,9 +1421,23 @@ mod render {
                 .filter(|user| user.get("system").and_then(Value::as_bool).unwrap_or(false))
                 .count();
             let regular = total.saturating_sub(system);
+            let interactive = users
+                .iter()
+                .filter(|user| {
+                    user.get("interactive")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false)
+                })
+                .count();
+            let sudo = users
+                .iter()
+                .filter(|user| user.get("sudo").and_then(Value::as_bool).unwrap_or(false))
+                .count();
             view.add_kv("Users", format!("{} total", total));
             view.add_kv("System users", system.to_string());
             view.add_kv("Regular users", regular.to_string());
+            view.add_kv("Interactive shells", interactive.to_string());
+            view.add_kv("Sudo access", sudo.to_string());
 
             let rows: Vec<Vec<String>> = users
                 .iter()
@@ -982,7 +1455,28 @@ mod render {
                     } else {
                         "regular"
                     };
-                    vec![name.to_string(), uid, shell.to_string(), role.to_string()]
+                    let interactive = if user
+                        .get("interactive")
+                        .and_then(Value::as_bool)
+                        .unwrap_or(false)
+                    {
+                        "yes"
+                    } else {
+                        "no"
+                    };
+                    let sudo = if user.get("sudo").and_then(Value::as_bool).unwrap_or(false) {
+                        "yes"
+                    } else {
+                        "no"
+                    };
+                    vec![
+                        name.to_string(),
+                        uid,
+                        shell.to_string(),
+                        role.to_string(),
+                        interactive.to_string(),
+                        sudo.to_string(),
+                    ]
                 })
                 .collect();
             if !rows.is_empty() {
@@ -993,6 +1487,8 @@ mod render {
                         "UID".to_string(),
                         "Shell".to_string(),
                         "Type".to_string(),
+                        "Interactive".to_string(),
+                        "Sudo".to_string(),
                     ],
                     rows,
                 });
@@ -1088,7 +1584,7 @@ mod render {
 mod tests {
     use super::*;
     use jsonschema::JSONSchema;
-    use serde_json::json;
+    use serde_json::{Value, json};
     use vmic_sdk::SectionStatus;
 
     // Link modules so their collectors register during tests.
@@ -1197,17 +1693,23 @@ mod tests {
             "storage",
             "Storage Overview",
             json!({
-                "mounts": [
+                "operating_mounts": [
                     {
                         "mount_point": "/data",
                         "fs_type": "ext4",
-                        "total_bytes": 100,
-                        "used_bytes": 95,
-                        "available_bytes": 5,
-                        "usage_ratio": 0.95
+                        "read_only": false,
+                        "category": "operating",
+                        "operational": true,
+                        "total_bytes": 100_000_000_000u64,
+                        "used_bytes": 95_000_000_000u64,
+                        "available_bytes": 5_000_000_000u64,
+                        "usage_ratio": 0.95,
+                        "inodes_usage_ratio": 0.5
                     }
                 ],
-                "totals": json!({})
+                "pseudo_mounts": [],
+                "totals": json!({}),
+                "docker": Value::Null
             }),
         );
         let report = Report::new(vec![storage]);
@@ -1227,17 +1729,23 @@ mod tests {
             "storage",
             "Storage Overview",
             json!({
-                "mounts": [
+                "operating_mounts": [
                     {
                         "mount_point": "/data",
                         "fs_type": "ext4",
-                        "total_bytes": 100,
-                        "used_bytes": 85,
-                        "available_bytes": 15,
-                        "usage_ratio": 0.85
+                        "read_only": false,
+                        "category": "operating",
+                        "operational": true,
+                        "total_bytes": 100_000_000_000u64,
+                        "used_bytes": 85_000_000_000u64,
+                        "available_bytes": 15_000_000_000u64,
+                        "usage_ratio": 0.85,
+                        "inodes_usage_ratio": 0.5
                     }
                 ],
-                "totals": json!({})
+                "pseudo_mounts": [],
+                "totals": json!({}),
+                "docker": Value::Null
             }),
         );
 

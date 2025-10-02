@@ -31,14 +31,14 @@ VMIC is a modular Rust tool that produces human- and machine-readable system rep
 | Module | Scope | Status |
 | --- | --- | --- |
 | `mod-os` | `/etc/os-release`, `uname` | ✅ implemented |
-| `mod-proc` | `/proc` load, memory, swap | ✅ implemented |
+| `mod-proc` | `/proc` load, memory, swap | ⚙️ host/cgroup memory, PSI, zram done; TODO top offenders & PSI sparkline |
 | `mod-journal` | `journalctl --output=json` ingest | ✅ implemented |
-| `mod-docker` | Docker API via `bollard` (`tokio` runtime, feature `client`) | ✅ engine/info plus per-container metrics with graceful fallbacks |
+| `mod-docker` | Docker API via `bollard` (`tokio` runtime, feature `client`) | ⚙️ engine/info plus per-container metrics; TODO per-container health, image/volume sizing |
 | `mod-users` | `/etc/passwd`, groups, shadow analysis | ✅ implemented |
 | `mod-cron` | cron tabs, system timers | ✅ implemented (system cron coverage) |
 | `mod-services` | init/systemd unit discovery (`systemctl`/D-Bus) | ✅ implemented (systemctl-based) |
-| `mod-network` | interfaces, sockets, listening ports | ✅ implemented (procfs `/proc/net`) |
-| `mod-storage` | mounts, usage, heavy directories | ✅ implemented (statvfs, /proc/mounts) |
+| `mod-network` | interfaces, sockets, listening ports | ⚙️ socket→PID/cgroup mapping done; TODO grouping & container metadata |
+| `mod-storage` | mounts, usage, heavy directories | ⚙️ operational vs pseudo FS split, inodes, Docker usage done; TODO heavy dirs/log hotspots |
 | `mod-sar` | sysstat historical metrics (feature) | ✅ implemented (CPU averages) |
 | `mod-containers` | Podman/containerd (feature; e.g., `podman`, `containerd`) | ✅ implemented (runtime detection) |
 | Security posture | sudoers, sshd_config, cgroups v2 | 💤 future optional |
@@ -61,6 +61,9 @@ VMIC is a modular Rust tool that produces human- and machine-readable system rep
 ## 8. Future Enhancements
 - ✅ Add HTML report template and aggregated HTML/JSON artifact generation.
 - ✅ Define and publish a JSON schema for machine-readable reports.
-- ✅ Extend Docker module with container metrics, graceful fallback when daemon unreachable.
-- ⏳ Implement modular security checks (cgroups, sshd, sudoers) once core modules are stable.
+- ⚙️ Extend Docker module with container metrics, graceful fallback when daemon unreachable — per-container health, sizes, limits, and runtime metadata outstanding.
+- ⚙️ Implement modular security checks (cgroups, sshd, sudoers) once core modules are stable — SSH brute-force summary shipped; rule set still pending.
+- ⏳ Disk usage drill-down (top directories/logs) for operational mounts.
+- ⏳ HTML UX refinements (navigation, collapsible sections, badges, tooltips, pseudo-FS "Noise" area).
+- ⏳ Network insights: grouping/listening hardening and richer container correlation.
 - 💤 Investigate `sar` ingestion and cross-platform container runtimes when demand appears.

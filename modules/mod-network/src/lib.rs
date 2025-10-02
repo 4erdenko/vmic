@@ -1,7 +1,9 @@
 use anyhow::{Context as _, Result};
 use procfs::net::{self, TcpState};
+use procfs::process;
 use serde::Serialize;
 use serde_json::json;
+use std::collections::HashMap;
 use vmic_sdk::{CollectionContext, Collector, CollectorMetadata, Section, register_collector};
 
 const MAX_SOCKET_SAMPLES: usize = 20;
@@ -83,6 +85,15 @@ struct SocketSample {
     protocol: String,
     local_address: String,
     state: Option<String>,
+    processes: Vec<SocketProcessInfo>,
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+struct SocketProcessInfo {
+    pid: i32,
+    command: String,
+    uid: u32,
+    container: Option<String>,
 }
 
 #[derive(Debug, Serialize, Clone, PartialEq, Eq)]
@@ -136,16 +147,19 @@ fn gather_listeners() -> (ListenerSnapshot, Vec<String>) {
     let mut samples = Vec::new();
     let mut counts = ListenerCounts::default();
     let mut notes = Vec::new();
+    let process_map = collect_socket_process_map().unwrap_or_default();
 
     match net::tcp() {
         Ok(entries) => {
             for entry in entries.into_iter().filter(|e| e.state == TcpState::Listen) {
                 counts.tcp += 1;
                 if samples.len() < MAX_SOCKET_SAMPLES {
+                    let processes = process_map.get(&entry.inode).cloned().unwrap_or_default();
                     samples.push(SocketSample {
                         protocol: "tcp".into(),
                         local_address: format!("{}", entry.local_address),
                         state: Some(format!("{:?}", entry.state)),
+                        processes,
                     });
                 }
             }
@@ -158,10 +172,12 @@ fn gather_listeners() -> (ListenerSnapshot, Vec<String>) {
             for entry in entries.into_iter().filter(|e| e.state == TcpState::Listen) {
                 counts.tcp6 += 1;
                 if samples.len() < MAX_SOCKET_SAMPLES {
+                    let processes = process_map.get(&entry.inode).cloned().unwrap_or_default();
                     samples.push(SocketSample {
                         protocol: "tcp6".into(),
                         local_address: format!("{}", entry.local_address),
                         state: Some(format!("{:?}", entry.state)),
+                        processes,
                     });
                 }
             }
@@ -176,10 +192,12 @@ fn gather_listeners() -> (ListenerSnapshot, Vec<String>) {
                 .into_iter()
                 .take(MAX_SOCKET_SAMPLES.saturating_sub(samples.len()))
             {
+                let processes = process_map.get(&entry.inode).cloned().unwrap_or_default();
                 samples.push(SocketSample {
                     protocol: "udp".into(),
                     local_address: format!("{}", entry.local_address),
                     state: None,
+                    processes,
                 });
             }
         }
@@ -193,10 +211,12 @@ fn gather_listeners() -> (ListenerSnapshot, Vec<String>) {
                 .into_iter()
                 .take(MAX_SOCKET_SAMPLES.saturating_sub(samples.len()))
             {
+                let processes = process_map.get(&entry.inode).cloned().unwrap_or_default();
                 samples.push(SocketSample {
                     protocol: "udp6".into(),
                     local_address: format!("{}", entry.local_address),
                     state: None,
+                    processes,
                 });
             }
         }
@@ -204,6 +224,61 @@ fn gather_listeners() -> (ListenerSnapshot, Vec<String>) {
     }
 
     (ListenerSnapshot { counts, samples }, notes)
+}
+
+fn collect_socket_process_map() -> Result<HashMap<u64, Vec<SocketProcessInfo>>> {
+    let mut map: HashMap<u64, Vec<SocketProcessInfo>> = HashMap::new();
+    let processes = process::all_processes()?;
+
+    for proc in processes {
+        let proc = match proc {
+            Ok(proc) => proc,
+            Err(_) => continue,
+        };
+        let pid = proc.pid();
+        let command = proc.stat().map(|s| s.comm).unwrap_or_else(|_| "?".into());
+        let uid = proc.uid().unwrap_or(0);
+        let container = proc
+            .cgroups()
+            .ok()
+            .and_then(|groups| extract_container_from_cgroups(&groups));
+
+        let processes_entry = SocketProcessInfo {
+            pid,
+            command,
+            uid,
+            container,
+        };
+
+        if let Ok(fds) = proc.fd() {
+            for fd in fds {
+                if let Ok(fd) = fd {
+                    if let process::FDTarget::Socket(inode) = fd.target {
+                        map.entry(inode).or_default().push(processes_entry.clone());
+                    }
+                }
+            }
+        }
+    }
+
+    Ok(map)
+}
+
+fn extract_container_from_cgroups(groups: &procfs::ProcessCGroups) -> Option<String> {
+    for group in &groups.0 {
+        let path = group.pathname.trim_matches('/');
+        if path.contains("docker/") {
+            if let Some(id) = path.split("docker/").nth(1) {
+                return Some(id.split('/').next().unwrap_or(id).to_string());
+            }
+        }
+        if path.contains("kubepods/") {
+            if let Some(id) = path.rsplit('/').next() {
+                return Some(id.to_string());
+            }
+        }
+    }
+    None
 }
 
 #[cfg(test)]

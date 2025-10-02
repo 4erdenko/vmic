@@ -1,9 +1,11 @@
+use std::collections::HashMap;
 use std::process::Command;
 use std::time::{Duration, UNIX_EPOCH};
 
 use anyhow::{Context as _, Result, anyhow};
 use chrono::{DateTime, SecondsFormat, Utc};
 use serde::{Deserialize, Serialize};
+use serde_json::Value;
 use serde_json::json;
 use vmic_sdk::{CollectionContext, Collector, CollectorMetadata, Section, register_collector};
 
@@ -23,13 +25,32 @@ impl Collector for JournalCollector {
     fn collect(&self, ctx: &CollectionContext) -> Result<Section> {
         match gather_entries(ctx) {
             Ok(entries) => {
+                let ssh_summary = summarize_ssh_activity(&entries);
                 let body = json!({
                     "source": "journalctl --output=json",
                     "entries": entries,
+                    "ssh_summary": ssh_summary,
                 });
 
                 let mut section = Section::success("journal", "systemd journal", body);
-                section.summary = Some(format!("Captured {} entries", entries.len()));
+                if let Some(summary) = section.body.get("ssh_summary").and_then(Value::as_object) {
+                    let invalid = summary
+                        .get("invalid_user_count")
+                        .and_then(Value::as_u64)
+                        .unwrap_or(0);
+                    let failures = summary
+                        .get("auth_failure_count")
+                        .and_then(Value::as_u64)
+                        .unwrap_or(0);
+                    section.summary = Some(format!(
+                        "Captured {} entries (SSH invalid users: {}, auth failures: {})",
+                        entries.len(),
+                        invalid,
+                        failures
+                    ));
+                } else {
+                    section.summary = Some(format!("Captured {} entries", entries.len()));
+                }
                 Ok(section)
             }
             Err(err) => Ok(Section::degraded(
@@ -68,6 +89,20 @@ struct JournalEntry {
     timestamp: String,
     source: Option<String>,
     message: String,
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+struct SshSummary {
+    invalid_user_count: u64,
+    auth_failure_count: u64,
+    top_usernames: Vec<CountEntry>,
+    top_hosts: Vec<CountEntry>,
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+struct CountEntry {
+    name: String,
+    count: u64,
 }
 
 fn gather_entries(ctx: &CollectionContext) -> Result<Vec<JournalEntry>> {
@@ -124,6 +159,93 @@ fn parse_journal_line(line: &str) -> Result<JournalEntry> {
         source,
         message,
     })
+}
+
+fn summarize_ssh_activity(entries: &[JournalEntry]) -> Option<SshSummary> {
+    let mut invalid_user = 0u64;
+    let mut auth_failures = 0u64;
+    let mut usernames: HashMap<String, u64> = HashMap::new();
+    let mut hosts: HashMap<String, u64> = HashMap::new();
+
+    for entry in entries {
+        let source = entry.source.as_deref().unwrap_or("").to_lowercase();
+        if !source.contains("ssh") {
+            continue;
+        }
+
+        let message_lower = entry.message.to_lowercase();
+        if message_lower.contains("invalid user") {
+            invalid_user += 1;
+            if let Some(username) = extract_after(&message_lower, "invalid user") {
+                *usernames.entry(username).or_insert(0) += 1;
+            }
+        }
+
+        if message_lower.contains("failed password")
+            || message_lower.contains("authentication failure")
+        {
+            auth_failures += 1;
+            if let Some(username) = extract_username_from_failure(&message_lower) {
+                *usernames.entry(username).or_insert(0) += 1;
+            }
+        }
+
+        if let Some(host) = extract_after(&message_lower, "from") {
+            *hosts.entry(host).or_insert(0) += 1;
+        }
+    }
+
+    if invalid_user == 0 && auth_failures == 0 {
+        return None;
+    }
+
+    let top_usernames = top_counts(usernames);
+    let top_hosts = top_counts(hosts);
+
+    Some(SshSummary {
+        invalid_user_count: invalid_user,
+        auth_failure_count: auth_failures,
+        top_usernames,
+        top_hosts,
+    })
+}
+
+fn top_counts(map: HashMap<String, u64>) -> Vec<CountEntry> {
+    let mut counts: Vec<_> = map.into_iter().collect();
+    counts.sort_by(|a, b| b.1.cmp(&a.1));
+    counts
+        .into_iter()
+        .take(5)
+        .map(|(name, count)| CountEntry { name, count })
+        .collect()
+}
+
+fn extract_after<'a>(message: &'a str, marker: &str) -> Option<String> {
+    message
+        .split(marker)
+        .nth(1)
+        .and_then(|tail| tail.split_whitespace().next())
+        .map(|token| {
+            token
+                .trim_matches(|c: char| !matches!(c, 'a'..='z' | '0'..='9' | '.' | ':' | '-'))
+                .to_string()
+        })
+        .filter(|token| !token.is_empty())
+}
+
+fn extract_username_from_failure(message: &str) -> Option<String> {
+    if let Some(segment) = message.split("for").nth(1) {
+        return segment
+            .split_whitespace()
+            .next()
+            .map(|token| {
+                token
+                    .trim_matches(|c: char| !matches!(c, 'a'..='z' | '0'..='9' | '-' | '_' | '.' ))
+                    .to_string()
+            })
+            .filter(|token| !token.is_empty());
+    }
+    None
 }
 
 fn format_timestamp(value: &str) -> Option<String> {

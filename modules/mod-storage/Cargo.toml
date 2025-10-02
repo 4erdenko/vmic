@@ -12,6 +12,7 @@ serde_json.workspace = true
 serde.workspace = true
 vmic-sdk = { path = "../../vmic-sdk" }
 rustix.workspace = true
+walkdir = "2.5.0"
 
 [lints]
 workspace = true
