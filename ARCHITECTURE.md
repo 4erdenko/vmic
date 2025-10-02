@@ -34,18 +34,19 @@ VMIC is a modular Rust tool that produces human- and machine-readable system rep
 | `mod-proc` | `/proc` load, memory, swap | ✅ implemented |
 | `mod-journal` | `journalctl --output=json` ingest | ✅ implemented |
 | `mod-docker` | Docker API via `bollard` (`tokio` runtime, feature `client`) | ⚙️ basic engine/info; error handling implemented; live stats still planned |
-| `mod-users` | `/etc/passwd`, groups, shadow analysis | ⏳ |
-| `mod-cron` | cron tabs, system timers | ⏳ |
-| `mod-services` | init/systemd unit discovery (`systemctl`/D-Bus) | ⏳ |
+| `mod-users` | `/etc/passwd`, groups, shadow analysis | ✅ implemented |
+| `mod-cron` | cron tabs, system timers | ✅ implemented (system cron coverage) |
+| `mod-services` | init/systemd unit discovery (`systemctl`/D-Bus) | ✅ implemented (systemctl-based) |
 | `mod-network` | interfaces, sockets, listening ports | ✅ implemented (procfs `/proc/net`) |
 | `mod-storage` | mounts, usage, heavy directories | ✅ implemented (statvfs, /proc/mounts) |
-| `mod-sar` | sysstat historical metrics (feature) | ⏳ |
-| `mod-containers` | Podman/containerd (feature; e.g., `podman`, `containerd`) | ⏳ |
+| `mod-sar` | sysstat historical metrics (feature) | ✅ implemented (CPU averages) |
+| `mod-containers` | Podman/containerd (feature; e.g., `podman`, `containerd`) | ✅ implemented (runtime detection) |
 | Security posture | sudoers, sshd_config, cgroups v2 | 💤 future optional |
 
 ## 7. Build, Testing, and Tooling
 - ✅ Release profile tuned for size (`opt-level = "z"`, `lto = "thin"`, `panic = "abort"`, `strip = "symbols"`).
 - ✅ Formatting via `cargo fmt`; unit tests per crate; smoke tests via `cargo run` documented.
+- ✅ Release binary smoke-tested via `cargo build --release` followed by running `vmic --format json`.
 - ⏳ CI automation (fmt/clippy/test matrix) intentionally deferred.
 
 ## 8. Future Enhancements

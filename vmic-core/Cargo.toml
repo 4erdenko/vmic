@@ -21,4 +21,9 @@ mod-os = { path = "../modules/mod-os" }
 mod-proc = { path = "../modules/mod-proc" }
 mod-journal = { path = "../modules/mod-journal" }
 mod-docker = { path = "../modules/mod-docker" }
+mod-users = { path = "../modules/mod-users" }
+mod-cron = { path = "../modules/mod-cron" }
+mod-services = { path = "../modules/mod-services" }
+mod-sar = { path = "../modules/mod-sar" }
+mod-containers = { path = "../modules/mod-containers" }
 vmic-sdk = { path = "../vmic-sdk" }

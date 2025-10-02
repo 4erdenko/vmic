@@ -93,10 +93,15 @@ mod tests {
     use vmic_sdk::SectionStatus;
 
     // Link modules so their collectors register during tests.
+    use mod_containers as _;
+    use mod_cron as _;
     use mod_docker as _;
     use mod_journal as _;
     use mod_os as _;
     use mod_proc as _;
+    use mod_sar as _;
+    use mod_services as _;
+    use mod_users as _;
 
     #[test]
     fn collect_report_returns_sections() {
