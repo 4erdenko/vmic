@@ -50,6 +50,7 @@ impl Collector for StorageCollector {
                     "pseudo_mounts": snapshot.pseudo,
                     "totals": snapshot.aggregate,
                     "docker": snapshot.docker,
+                    "hotspots": snapshot.hotspots,
                 });
 
                 let mut section = Section::success("storage", "Storage Overview", body);
@@ -120,6 +121,7 @@ struct StorageSnapshot {
     pseudo: Vec<MountUsage>,
     aggregate: AggregateUsage,
     docker: Option<DockerStorageBreakdown>,
+    hotspots: HotspotSummary,
 }
 
 impl StorageSnapshot {
@@ -130,6 +132,24 @@ impl StorageSnapshot {
         let sum: f64 = self.operating.iter().map(|m| m.usage_ratio).sum();
         sum / (self.operating.len() as f64)
     }
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq, Default)]
+struct HotspotSummary {
+    directories: Vec<DirectoryHotspot>,
+    logs: Vec<LogHotspot>,
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq)]
+struct DirectoryHotspot {
+    path: String,
+    size_bytes: u64,
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq)]
+struct LogHotspot {
+    path: String,
+    size_bytes: u64,
 }
 
 fn build_snapshot() -> Result<(StorageSnapshot, Vec<String>)> {
@@ -193,12 +213,16 @@ fn build_snapshot() -> Result<(StorageSnapshot, Vec<String>)> {
         None => None,
     };
 
+    let (hotspots, mut hotspot_notes) = collect_hotspots(&operating);
+    notes.append(&mut hotspot_notes);
+
     Ok((
         StorageSnapshot {
             operating,
             pseudo,
             aggregate,
             docker: docker_usage,
+            hotspots,
         },
         notes,
     ))
@@ -466,6 +490,127 @@ fn directory_size(path: &Path, max_depth: Option<usize>) -> Result<u64> {
     Ok(total)
 }
 
+fn collect_hotspots(operating: &[MountUsage]) -> (HotspotSummary, Vec<String>) {
+    const DIRECTORY_SCAN_DEPTH: usize = 3;
+    const DIRECTORY_SAMPLE_PER_MOUNT: usize = 20;
+    const DIRECTORY_LIMIT: usize = 5;
+    const LOG_SCAN_DEPTH: usize = 2;
+    const LOG_LIMIT: usize = 5;
+
+    let mut notes = Vec::new();
+    let mut directory_candidates = Vec::new();
+
+    for mount in operating
+        .iter()
+        .filter(|mount| mount.operational && !mount.read_only)
+    {
+        let path = Path::new(&mount.mount_point);
+        match collect_directory_hotspots(path, DIRECTORY_SCAN_DEPTH, DIRECTORY_SAMPLE_PER_MOUNT) {
+            Ok(mut hotspots) => directory_candidates.append(&mut hotspots),
+            Err(error) => notes.push(format!(
+                "Failed to inspect {}: {}",
+                mount.mount_point, error
+            )),
+        }
+    }
+
+    directory_candidates.sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes));
+    directory_candidates.truncate(DIRECTORY_LIMIT);
+
+    let (log_hotspots, mut log_notes) = collect_log_hotspots(Path::new("/var/log"), LOG_SCAN_DEPTH);
+    notes.append(&mut log_notes);
+
+    let logs = log_hotspots.into_iter().take(LOG_LIMIT).collect();
+
+    (
+        HotspotSummary {
+            directories: directory_candidates,
+            logs,
+        },
+        notes,
+    )
+}
+
+fn collect_directory_hotspots(
+    root: &Path,
+    max_depth: usize,
+    limit: usize,
+) -> Result<Vec<DirectoryHotspot>> {
+    if !root.is_dir() {
+        return Ok(Vec::new());
+    }
+
+    let mut hotspots = Vec::new();
+    let mut processed = 0usize;
+
+    for entry in fs::read_dir(root)? {
+        if processed >= limit {
+            break;
+        }
+        let entry = entry?;
+        let file_type = entry.file_type()?;
+        if !file_type.is_dir() {
+            continue;
+        }
+
+        let size = directory_size(&entry.path(), Some(max_depth))?;
+        hotspots.push(DirectoryHotspot {
+            path: entry.path().display().to_string(),
+            size_bytes: size,
+        });
+        processed += 1;
+    }
+
+    hotspots.sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes));
+    Ok(hotspots)
+}
+
+fn collect_log_hotspots(root: &Path, max_depth: usize) -> (Vec<LogHotspot>, Vec<String>) {
+    const LOG_SCAN_CAP: usize = 512;
+
+    if !root.is_dir() {
+        return (Vec::new(), Vec::new());
+    }
+
+    let mut files = Vec::new();
+    let mut notes = Vec::new();
+    let mut examined = 0usize;
+
+    let walker = WalkDir::new(root).max_depth(max_depth).follow_links(false);
+    for entry in walker {
+        match entry {
+            Ok(entry) => {
+                if entry.file_type().is_file() {
+                    match entry.metadata() {
+                        Ok(metadata) => {
+                            files.push(LogHotspot {
+                                path: entry.path().display().to_string(),
+                                size_bytes: metadata.len(),
+                            });
+                            examined += 1;
+                            if examined >= LOG_SCAN_CAP {
+                                break;
+                            }
+                        }
+                        Err(error) => notes.push(format!(
+                            "Failed to inspect log {}: {}",
+                            entry.path().display(),
+                            error
+                        )),
+                    }
+                }
+            }
+            Err(error) => {
+                notes.push(format!("Failed to traverse log directory: {error}"));
+                break;
+            }
+        }
+    }
+
+    files.sort_by(|a, b| b.size_bytes.cmp(&a.size_bytes));
+    (files, notes)
+}
+
 const PSEUDO_FS_TYPES: [&str; 13] = [
     "squashfs",
     "overlay",
@@ -495,6 +640,8 @@ const OPERATIONAL_PATHS: [&str; 7] = [
 #[cfg(test)]
 mod tests {
     use super::*;
+    use std::fs;
+    use tempfile::tempdir;
 
     #[test]
     fn decode_mount_field_unescapes_space() {
@@ -549,5 +696,38 @@ mod tests {
         assert_eq!(aggregate.total_bytes, 150);
         assert_eq!(aggregate.used_bytes, 50);
         assert_eq!(aggregate.available_bytes, 100);
+    }
+
+    #[test]
+    fn collect_directory_hotspots_prioritizes_larger() {
+        let temp = tempdir().expect("tempdir");
+        let large_dir = temp.path().join("large");
+        let small_dir = temp.path().join("small");
+        fs::create_dir_all(&large_dir).expect("create large");
+        fs::create_dir_all(&small_dir).expect("create small");
+        fs::write(large_dir.join("big.log"), vec![0u8; 2048]).expect("write big");
+        fs::write(small_dir.join("tiny.log"), vec![0u8; 16]).expect("write tiny");
+
+        let hotspots = collect_directory_hotspots(temp.path(), 1, 10).expect("hotspots");
+        assert!(hotspots.len() >= 2);
+        assert!(hotspots[0].path.ends_with("large"));
+        assert!(hotspots[0].size_bytes >= hotspots[1].size_bytes);
+    }
+
+    #[test]
+    fn collect_log_hotspots_limits_results() {
+        let temp = tempdir().expect("tempdir");
+        fs::create_dir_all(temp.path().join("nested")).expect("create nested");
+        fs::write(temp.path().join("app.log"), vec![0u8; 1024]).expect("write app");
+        fs::write(
+            temp.path().join("nested").join("service.log"),
+            vec![0u8; 512],
+        )
+        .expect("write service");
+
+        let (hotspots, notes) = collect_log_hotspots(temp.path(), 2);
+        assert!(notes.is_empty());
+        assert_eq!(hotspots.first().unwrap().size_bytes, 1024);
+        assert!(hotspots[0].path.ends_with("app.log"));
     }
 }

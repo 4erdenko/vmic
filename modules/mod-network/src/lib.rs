@@ -3,7 +3,7 @@ use procfs::net::{self, TcpState};
 use procfs::process;
 use serde::Serialize;
 use serde_json::json;
-use std::collections::HashMap;
+use std::collections::{HashMap, HashSet};
 use vmic_sdk::{CollectionContext, Collector, CollectorMetadata, Section, register_collector};
 
 const MAX_SOCKET_SAMPLES: usize = 20;
@@ -33,6 +33,7 @@ impl Collector for NetworkCollector {
                     "listeners": {
                         "counts": snapshot.listeners.counts,
                         "samples": snapshot.listeners.samples,
+                        "groups": snapshot.listeners.groups,
                     }
                 });
 
@@ -100,12 +101,31 @@ struct SocketProcessInfo {
 struct ListenerSnapshot {
     counts: ListenerCounts,
     samples: Vec<SocketSample>,
+    groups: Vec<ListenerContainerGroup>,
 }
 
 #[derive(Debug, Serialize, Clone, PartialEq, Eq)]
 struct NetworkSnapshot {
     interfaces: Vec<InterfaceInfo>,
     listeners: ListenerSnapshot,
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+struct ListenerContainerGroup {
+    container: Option<String>,
+    socket_count: usize,
+    process_count: usize,
+    processes: Vec<ListenerProcessGroup>,
+}
+
+#[derive(Debug, Serialize, Clone, PartialEq, Eq)]
+struct ListenerProcessGroup {
+    pid: i32,
+    command: String,
+    uid: u32,
+    socket_count: usize,
+    protocols: Vec<String>,
+    local_addresses: Vec<String>,
 }
 
 fn build_snapshot() -> Result<(NetworkSnapshot, Vec<String>)> {
@@ -223,7 +243,16 @@ fn gather_listeners() -> (ListenerSnapshot, Vec<String>) {
         Err(err) => notes.push(format!("Failed to read /proc/net/udp6: {}", err)),
     }
 
-    (ListenerSnapshot { counts, samples }, notes)
+    let groups = build_listener_groups(&samples);
+
+    (
+        ListenerSnapshot {
+            counts,
+            samples,
+            groups,
+        },
+        notes,
+    )
 }
 
 fn collect_socket_process_map() -> Result<HashMap<u64, Vec<SocketProcessInfo>>> {
@@ -281,6 +310,117 @@ fn extract_container_from_cgroups(groups: &procfs::ProcessCGroups) -> Option<Str
     None
 }
 
+fn build_listener_groups(samples: &[SocketSample]) -> Vec<ListenerContainerGroup> {
+    let mut process_groups: HashMap<i32, ListenerProcessGroupBuilder> = HashMap::new();
+
+    for sample in samples {
+        for process in &sample.processes {
+            let entry = process_groups
+                .entry(process.pid)
+                .or_insert_with(|| ListenerProcessGroupBuilder::new(process));
+            entry.socket_count = entry.socket_count.saturating_add(1);
+            entry.protocols.insert(sample.protocol.clone());
+            entry.local_addresses.insert(sample.local_address.clone());
+        }
+    }
+
+    let mut container_groups: HashMap<Option<String>, ListenerContainerGroupBuilder> =
+        HashMap::new();
+
+    for builder in process_groups.into_values() {
+        let (container, process_group) = builder.finish();
+        let entry = container_groups
+            .entry(container.clone())
+            .or_insert_with(|| ListenerContainerGroupBuilder::new(container));
+        entry.socket_count = entry
+            .socket_count
+            .saturating_add(process_group.socket_count);
+        entry.process_count = entry.process_count.saturating_add(1);
+        entry.processes.push(process_group);
+    }
+
+    let mut groups: Vec<_> = container_groups
+        .into_values()
+        .map(|builder| builder.finish())
+        .collect();
+    groups.sort_by(|a, b| b.socket_count.cmp(&a.socket_count));
+    groups
+}
+
+#[derive(Debug)]
+struct ListenerProcessGroupBuilder {
+    container: Option<String>,
+    pid: i32,
+    command: String,
+    uid: u32,
+    socket_count: usize,
+    protocols: HashSet<String>,
+    local_addresses: HashSet<String>,
+}
+
+impl ListenerProcessGroupBuilder {
+    fn new(process: &SocketProcessInfo) -> Self {
+        ListenerProcessGroupBuilder {
+            container: process.container.clone(),
+            pid: process.pid,
+            command: process.command.clone(),
+            uid: process.uid,
+            socket_count: 0,
+            protocols: HashSet::new(),
+            local_addresses: HashSet::new(),
+        }
+    }
+
+    fn finish(self) -> (Option<String>, ListenerProcessGroup) {
+        let mut protocols: Vec<String> = self.protocols.into_iter().collect();
+        protocols.sort();
+        let mut local_addresses: Vec<String> = self.local_addresses.into_iter().collect();
+        local_addresses.sort();
+
+        (
+            self.container,
+            ListenerProcessGroup {
+                pid: self.pid,
+                command: self.command,
+                uid: self.uid,
+                socket_count: self.socket_count,
+                protocols,
+                local_addresses,
+            },
+        )
+    }
+}
+
+#[derive(Debug)]
+struct ListenerContainerGroupBuilder {
+    container: Option<String>,
+    socket_count: usize,
+    process_count: usize,
+    processes: Vec<ListenerProcessGroup>,
+}
+
+impl ListenerContainerGroupBuilder {
+    fn new(container: Option<String>) -> Self {
+        ListenerContainerGroupBuilder {
+            container,
+            socket_count: 0,
+            process_count: 0,
+            processes: Vec::new(),
+        }
+    }
+
+    fn finish(mut self) -> ListenerContainerGroup {
+        self.processes
+            .sort_by(|a, b| b.socket_count.cmp(&a.socket_count));
+        ListenerContainerGroup {
+            container: self.container,
+            socket_count: self.socket_count,
+            process_count: self.process_count,
+            processes: self.processes,
+        }
+    }
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -294,5 +434,63 @@ mod tests {
             udp6: 0,
         };
         assert_eq!(counts.total(), 6);
+    }
+
+    #[test]
+    fn build_listener_groups_aggregates_by_container() {
+        let samples = vec![
+            SocketSample {
+                protocol: "tcp".into(),
+                local_address: "127.0.0.1:80".into(),
+                state: Some("Listen".into()),
+                processes: vec![SocketProcessInfo {
+                    pid: 100,
+                    command: "nginx".into(),
+                    uid: 0,
+                    container: Some("container_a".into()),
+                }],
+            },
+            SocketSample {
+                protocol: "tcp".into(),
+                local_address: "127.0.0.1:443".into(),
+                state: Some("Listen".into()),
+                processes: vec![SocketProcessInfo {
+                    pid: 100,
+                    command: "nginx".into(),
+                    uid: 0,
+                    container: Some("container_a".into()),
+                }],
+            },
+            SocketSample {
+                protocol: "tcp".into(),
+                local_address: "0.0.0.0:22".into(),
+                state: Some("Listen".into()),
+                processes: vec![SocketProcessInfo {
+                    pid: 1,
+                    command: "sshd".into(),
+                    uid: 0,
+                    container: None,
+                }],
+            },
+        ];
+
+        let groups = build_listener_groups(&samples);
+        assert_eq!(groups.len(), 2);
+
+        let container_group = groups
+            .iter()
+            .find(|group| group.container.as_deref() == Some("container_a"))
+            .expect("container group");
+        assert_eq!(container_group.socket_count, 2);
+        assert_eq!(container_group.process_count, 1);
+        assert_eq!(container_group.processes[0].socket_count, 2);
+        assert_eq!(container_group.processes[0].protocols, vec!["tcp"]);
+
+        let host_group = groups
+            .iter()
+            .find(|group| group.container.is_none())
+            .expect("host group");
+        assert_eq!(host_group.socket_count, 1);
+        assert_eq!(host_group.processes[0].local_addresses, vec!["0.0.0.0:22"]);
     }
 }

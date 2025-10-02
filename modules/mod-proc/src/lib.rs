@@ -3,7 +3,7 @@ use std::fs;
 use std::path::{Path, PathBuf};
 
 use anyhow::{Context as _, Result};
-use procfs::{Current, LoadAverage, Meminfo, process::Process};
+use procfs::{Current, LoadAverage, Meminfo, Uptime, process::Process};
 use serde_json::json;
 use vmic_sdk::{CollectionContext, Collector, CollectorMetadata, Section, register_collector};
 
@@ -35,6 +35,7 @@ struct ProcSnapshot {
     loadavg: Option<(f32, f32, f32)>,
     memory: MemorySnapshot,
     psi: Option<PsiSnapshot>,
+    top_processes: Option<TopProcesses>,
     notes: Vec<String>,
 }
 
@@ -110,18 +111,35 @@ struct PsiMetrics {
     total: u64,
 }
 
+#[derive(Debug, Clone, PartialEq)]
+struct ProcessUsage {
+    pid: i32,
+    command: String,
+    cpu_percent: Option<f64>,
+    memory_bytes: Option<u64>,
+}
+
+#[derive(Debug, Clone, PartialEq)]
+struct TopProcesses {
+    by_cpu: Vec<ProcessUsage>,
+    by_memory: Vec<ProcessUsage>,
+}
+
 fn build_snapshot() -> Result<ProcSnapshot> {
     let loadavg = LoadAverage::current()
         .ok()
         .map(|l| (l.one, l.five, l.fifteen));
 
-    let (memory, notes) = collect_memory_snapshot()?;
+    let (memory, mut notes) = collect_memory_snapshot()?;
     let psi = collect_psi_snapshot();
+    let (top_processes, mut process_notes) = collect_top_processes();
+    notes.append(&mut process_notes);
 
     Ok(ProcSnapshot {
         loadavg,
         memory,
         psi,
+        top_processes,
         notes,
     })
 }
@@ -202,6 +220,131 @@ fn collect_psi_snapshot() -> Option<PsiSnapshot> {
     } else {
         Some(PsiSnapshot { cpu, memory, io })
     }
+}
+
+fn collect_top_processes() -> (Option<TopProcesses>, Vec<String>) {
+    match gather_process_usage() {
+        Ok(usages) => {
+            if usages.is_empty() {
+                (None, Vec::new())
+            } else {
+                let top = summarize_top_processes(&usages, 5);
+                if top.by_cpu.is_empty() && top.by_memory.is_empty() {
+                    (None, Vec::new())
+                } else {
+                    (Some(top), Vec::new())
+                }
+            }
+        }
+        Err(error) => (
+            None,
+            vec![format!("Failed to collect process usage details: {error}")],
+        ),
+    }
+}
+
+fn gather_process_usage() -> Result<Vec<ProcessUsage>> {
+    let uptime = match Uptime::current() {
+        Ok(value) if value.uptime > 0.0 => value.uptime,
+        Ok(_) => return Ok(Vec::new()),
+        Err(error) => return Err(error.into()),
+    };
+
+    let ticks_per_second = procfs::ticks_per_second() as f64;
+    let page_size = procfs::page_size();
+    let mut usages = Vec::new();
+
+    let processes = procfs::process::all_processes()?;
+    for entry in processes {
+        let proc = match entry {
+            Ok(proc) => proc,
+            Err(_) => continue,
+        };
+
+        let stat = match proc.stat() {
+            Ok(stat) => stat,
+            Err(_) => continue,
+        };
+
+        let command = stat.comm.clone();
+        let pid = proc.pid();
+
+        let cpu_percent = calculate_average_cpu_percent(&stat, uptime, ticks_per_second);
+        let memory_bytes = if stat.rss > 0 {
+            Some((stat.rss as u64).saturating_mul(page_size))
+        } else {
+            None
+        };
+
+        usages.push(ProcessUsage {
+            pid,
+            command,
+            cpu_percent,
+            memory_bytes,
+        });
+    }
+
+    Ok(usages)
+}
+
+fn calculate_average_cpu_percent(
+    stat: &procfs::process::Stat,
+    uptime: f64,
+    ticks_per_second: f64,
+) -> Option<f64> {
+    let total_time_ticks = stat.utime.checked_add(stat.stime)? as f64;
+    if total_time_ticks <= 0.0 || ticks_per_second <= 0.0 {
+        return Some(0.0);
+    }
+
+    let total_time_seconds = total_time_ticks / ticks_per_second;
+    let start_time_seconds = stat.starttime as f64 / ticks_per_second;
+    let elapsed = (uptime - start_time_seconds).max(0.0);
+
+    if elapsed <= f64::EPSILON {
+        Some(0.0)
+    } else {
+        Some((total_time_seconds / elapsed) * 100.0)
+    }
+}
+
+fn summarize_top_processes(usages: &[ProcessUsage], limit: usize) -> TopProcesses {
+    use std::cmp::Ordering;
+
+    let mut by_cpu: Vec<ProcessUsage> = usages
+        .iter()
+        .filter(|usage| usage.cpu_percent.unwrap_or(0.0) > 0.0)
+        .cloned()
+        .collect();
+    by_cpu.sort_by(|a, b| {
+        let a_cpu = a.cpu_percent.unwrap_or(0.0);
+        let b_cpu = b.cpu_percent.unwrap_or(0.0);
+        b_cpu
+            .partial_cmp(&a_cpu)
+            .unwrap_or(Ordering::Equal)
+            .then_with(|| a.pid.cmp(&b.pid))
+    });
+    by_cpu.truncate(limit);
+
+    let mut by_memory: Vec<ProcessUsage> = usages
+        .iter()
+        .filter(|usage| usage.memory_bytes.unwrap_or(0) > 0)
+        .cloned()
+        .collect();
+    by_memory.sort_by(|a, b| {
+        let mem_cmp = b
+            .memory_bytes
+            .unwrap_or(0)
+            .cmp(&a.memory_bytes.unwrap_or(0));
+        if mem_cmp == Ordering::Equal {
+            a.pid.cmp(&b.pid)
+        } else {
+            mem_cmp
+        }
+    });
+    by_memory.truncate(limit);
+
+    TopProcesses { by_cpu, by_memory }
 }
 
 fn host_memory_from_meminfo(meminfo: &Meminfo) -> HostMemory {
@@ -479,6 +622,7 @@ fn psi_resource_to_value(resource: &PsiResource) -> serde_json::Value {
     json!({
         "some": resource.some.as_ref().map(psi_metrics_to_value),
         "full": resource.full.as_ref().map(psi_metrics_to_value),
+        "sparkline": psi_sparkline(resource),
     })
 }
 
@@ -489,6 +633,41 @@ fn psi_metrics_to_value(metrics: &PsiMetrics) -> serde_json::Value {
         "avg300": metrics.avg300,
         "total": metrics.total,
     })
+}
+
+fn psi_sparkline(resource: &PsiResource) -> Option<String> {
+    let metrics = resource.some.as_ref().or(resource.full.as_ref())?;
+    Some(ascii_sparkline(&[
+        metrics.avg300,
+        metrics.avg60,
+        metrics.avg10,
+    ]))
+}
+
+fn ascii_sparkline(values: &[f64]) -> String {
+    const SYMBOLS: [char; 6] = ['_', '.', '-', '=', '*', '#'];
+    if values.is_empty() {
+        return String::new();
+    }
+
+    let max_value = values
+        .iter()
+        .copied()
+        .fold(0.0_f64, |acc, value| acc.max(value.max(0.0)));
+
+    if max_value <= f64::EPSILON {
+        return std::iter::repeat('_').take(values.len()).collect();
+    }
+
+    values
+        .iter()
+        .map(|value| {
+            let clamped = value.max(0.0).min(max_value);
+            let normalized = clamped / max_value;
+            let idx = (normalized * (SYMBOLS.len() as f64 - 1.0)).round() as usize;
+            SYMBOLS.get(idx).copied().unwrap_or('#')
+        })
+        .collect()
 }
 
 fn bytes_to_gib(bytes: u64) -> f64 {
@@ -559,6 +738,18 @@ fn section_from_snapshot(snapshot: &ProcSnapshot) -> Section {
             "memory": psi.memory.as_ref().map(|res| psi_resource_to_value(res)),
             "io": psi.io.as_ref().map(|res| psi_resource_to_value(res)),
         })),
+        "top_processes": snapshot.top_processes.as_ref().map(|top| json!({
+            "by_cpu": top
+                .by_cpu
+                .iter()
+                .map(process_usage_to_value)
+                .collect::<Vec<_>>(),
+            "by_memory": top
+                .by_memory
+                .iter()
+                .map(process_usage_to_value)
+                .collect::<Vec<_>>(),
+        })),
     });
 
     let mut section = Section::success("proc", "Processes and Resources", body);
@@ -598,6 +789,15 @@ impl ProcSnapshot {
     }
 }
 
+fn process_usage_to_value(usage: &ProcessUsage) -> serde_json::Value {
+    json!({
+        "pid": usage.pid,
+        "command": usage.command,
+        "cpu_percent": usage.cpu_percent,
+        "memory_bytes": usage.memory_bytes,
+    })
+}
+
 #[cfg(test)]
 mod tests {
     use super::*;
@@ -622,6 +822,7 @@ mod tests {
                 },
             },
             psi: None,
+            top_processes: None,
             notes: Vec::new(),
         };
 
@@ -651,6 +852,7 @@ mod tests {
                 },
             },
             psi: None,
+            top_processes: None,
             notes: Vec::new(),
         };
 
@@ -664,5 +866,47 @@ mod tests {
             mem.get("total_bytes").and_then(|v| v.as_u64()),
             Some(2_147_483_648)
         );
+    }
+
+    #[test]
+    fn summarize_top_processes_orders_results() {
+        let usages = vec![
+            ProcessUsage {
+                pid: 1,
+                command: "init".into(),
+                cpu_percent: Some(1.0),
+                memory_bytes: Some(10),
+            },
+            ProcessUsage {
+                pid: 2,
+                command: "web".into(),
+                cpu_percent: Some(25.0),
+                memory_bytes: Some(30),
+            },
+            ProcessUsage {
+                pid: 3,
+                command: "db".into(),
+                cpu_percent: Some(10.0),
+                memory_bytes: Some(50),
+            },
+        ];
+
+        let top = summarize_top_processes(&usages, 2);
+        assert_eq!(top.by_cpu.len(), 2);
+        assert_eq!(top.by_cpu[0].pid, 2);
+        assert_eq!(top.by_memory[0].pid, 3);
+    }
+
+    #[test]
+    fn ascii_sparkline_handles_zero_values() {
+        let result = ascii_sparkline(&[0.0, 0.0, 0.0]);
+        assert_eq!(result, "___");
+    }
+
+    #[test]
+    fn ascii_sparkline_scales_values() {
+        let result = ascii_sparkline(&[1.0, 3.0, 5.0]);
+        assert_eq!(result.len(), 3);
+        assert!(result.contains('#'));
     }
 }
