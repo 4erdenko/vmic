@@ -1985,6 +1985,7 @@ dependencies = [
  "mod-os",
  "mod-proc",
  "mod-sar",
+ "mod-security",
  "mod-services",
  "mod-storage",
  "mod-users",

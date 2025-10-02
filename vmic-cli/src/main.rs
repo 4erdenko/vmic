@@ -19,6 +19,7 @@ use mod_cron as _;
 use mod_docker as _;
 use mod_network as _;
 use mod_sar as _;
+use mod_security as _;
 use mod_services as _;
 use mod_storage as _;
 use mod_users as _;

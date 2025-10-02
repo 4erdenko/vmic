@@ -23,6 +23,7 @@ mod-sar = { path = "../modules/mod-sar" }
 mod-containers = { path = "../modules/mod-containers" }
 mod-storage = { path = "../modules/mod-storage" }
 mod-network = { path = "../modules/mod-network" }
+mod-security = { path = "../modules/mod-security" }
 
 [features]
 default = ["journal"]

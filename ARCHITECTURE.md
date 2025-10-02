@@ -19,13 +19,13 @@ VMIC is a modular Rust tool that produces human- and machine-readable system rep
 - ✅ Helper macros and section helpers (`success/degraded/error`) for unified output.
 
 ## 4. Core Runtime & Rendering
-- ✅ Markdown rendering (Askama) and JSON serialization with metadata (timestamp, section count); Askama configured via crate-local `askama.toml`; JSON schema formalization is still pending.
-- ⚙️ HTML renderer exposed via `--format html` now renders a structured dashboard (tables/lists per section, health digest summary); further enhancements like alternate themes or drill-down views remain open.
+- ✅ Markdown rendering (Askama) and JSON serialization with metadata (timestamp, section count); Askama configured via crate-local `askama.toml`; the embedded JSON schema (`schemas/vmic-report.schema.json`) is consumed through `vmic-core/src/schema.rs` and verified by unit tests.
+- ⚙️ HTML renderer exposed via `--format html` renders a structured dashboard (tables/lists per section, health digest summary); enhancements like alternate themes or drill-down views remain open.
 
 ## 5. Command-Line Interface
-- ✅ Clap-based CLI with Markdown/JSON modes; default build enables `journal` & `docker` modules while retaining feature flags for extensibility (`journal`, `docker`, module-specific feature toggles like `mod-docker/client`).
+- ✅ Clap-based CLI with Markdown/JSON/HTML modes; default build enables the `journal` feature and the Docker client is activated via the `mod-docker/client` feature flag.
 - ✅ Builds default to the musl target with `crt-static` via `.cargo/config.toml`.
-- ✅ Added multi-format support (`--format` accepts repeated values), file output directory control (`--output-dir`), and relative time filtering via `--since`.
+- ✅ Multi-format support (`--format` accepts repeated values), output directory control (`--output-dir`), and relative time filtering (`--since`).
 
 ## 6. Modules
 | Module | Scope | Status |
