@@ -33,7 +33,7 @@ VMIC is a modular Rust tool that produces human- and machine-readable system rep
 | `mod-os` | `/etc/os-release`, `uname` | ✅ implemented |
 | `mod-proc` | `/proc` load, memory, swap | ✅ implemented |
 | `mod-journal` | `journalctl --output=json` ingest | ✅ implemented |
-| `mod-docker` | Docker API via `bollard` (`tokio` runtime, feature `client`) | ⚙️ basic engine/info; error handling implemented; live stats still planned |
+| `mod-docker` | Docker API via `bollard` (`tokio` runtime, feature `client`) | ✅ engine/info plus per-container metrics with graceful fallbacks |
 | `mod-users` | `/etc/passwd`, groups, shadow analysis | ✅ implemented |
 | `mod-cron` | cron tabs, system timers | ✅ implemented (system cron coverage) |
 | `mod-services` | init/systemd unit discovery (`systemctl`/D-Bus) | ✅ implemented (systemctl-based) |
@@ -61,6 +61,6 @@ VMIC is a modular Rust tool that produces human- and machine-readable system rep
 ## 8. Future Enhancements
 - ✅ Add HTML report template and aggregated HTML/JSON artifact generation.
 - ✅ Define and publish a JSON schema for machine-readable reports.
-- ⏳ Extend Docker module with container metrics, graceful fallback when daemon unreachable.
+- ✅ Extend Docker module with container metrics, graceful fallback when daemon unreachable.
 - ⏳ Implement modular security checks (cgroups, sshd, sudoers) once core modules are stable.
 - 💤 Investigate `sar` ingestion and cross-platform container runtimes when demand appears.

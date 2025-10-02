@@ -1127,9 +1127,13 @@ mod tests {
 
     #[test]
     fn report_json_conforms_to_schema() {
-        let mut section = Section::success("demo", "Demo Section", json!({
-            "value": 42,
-        }));
+        let mut section = Section::success(
+            "demo",
+            "Demo Section",
+            json!({
+                "value": 42,
+            }),
+        );
         section.summary = Some("Demo summary".to_string());
 
         let report = Report::with_digest_config(vec![section], DigestThresholds::default());
@@ -1137,10 +1141,11 @@ mod tests {
         let document = report.to_json_value();
 
         if let Err(errors) = compiled.validate(&document) {
-            let collected: Vec<String> = errors
-                .map(|err| format!("{}", err))
-                .collect();
-            panic!("report JSON did not match schema:\n{}", collected.join("\n"));
+            let collected: Vec<String> = errors.map(|err| format!("{}", err)).collect();
+            panic!(
+                "report JSON did not match schema:\n{}",
+                collected.join("\n")
+            );
         }
     }
 
