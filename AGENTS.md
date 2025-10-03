@@ -14,6 +14,11 @@
 - `cargo clippy --workspace --all-targets -- -D warnings` — run alongside linting and tests; treat every warning as a must-fix before submitting patches.
 - `rustup target add x86_64-unknown-linux-musl` — one-time command to enable musl builds.
 
+## Release Automation
+- Release tagging is handled by release-please; ensure commits follow Conventional Commit style and keep the release PR green.
+- Configure a repository secret `RELEASE_PLEASE_TOKEN` (PAT with `contents:write`) so release-please pushes tags that trigger downstream workflows.
+- cargo-dist builds, packages, and uploads `x86_64-unknown-linux-musl` archives on tag pushes (`v*`) via `.github/workflows/release.yml`.
+
 ## Coding Style & Naming Conventions
 - Rust 2024 edition, enforced via `cargo fmt`; run before submitting patches.
 - Modules follow snake_case (`mod-os`), types use CamelCase (`OsSnapshot`), functions use snake_case.

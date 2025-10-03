@@ -56,7 +56,7 @@ VMIC is a modular Rust tool that produces human- and machine-readable system rep
 - ✅ Release profile tuned for size (`opt-level = "z"`, `lto = "thin"`, `panic = "abort"`, `strip = "symbols"`).
 - ✅ Formatting via `cargo fmt`; unit tests per crate; smoke tests via `cargo run` documented.
 - ✅ Release binary smoke-tested via `cargo build --release` followed by running `vmic --format json`.
-- ⏳ CI automation (fmt/clippy/test matrix) intentionally deferred.
+- ⚙️ Release automation via release-please (conventional commits, PAT-backed release PRs) and cargo-dist (musl artifacts on tag pushes); CI secrets pending (`RELEASE_PLEASE_TOKEN`).
 
 ## 8. Future Enhancements
 - ✅ Add HTML report template and aggregated HTML/JSON artifact generation.
@@ -77,3 +77,4 @@ VMIC is a modular Rust tool that produces human- and machine-readable system rep
 - Journald SSH activity summary (invalid users, auth failures, top users/hosts) derived from recent journal entries.
 - Alternative container runtimes discovery (podman/nerdctl/ctr) for heterogeneous environments.
 - CLI ergonomics: multi-output selection, deterministic artifact naming with UTC timestamps, and environment overrides for digest thresholds (`VMIC_DIGEST_*`).
+- Release automation blueprint prepared (release-please manifest/config, cargo-dist release workflow, PAT requirement documented) awaiting first tagged run.
