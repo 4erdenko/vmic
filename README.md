@@ -88,3 +88,6 @@ Releases are orchestrated by [release-please](https://github.com/googleapis/rele
 - Pushes to `master` with conventional commits keep a release PR open. Merging that PR tags the repository (tag format `vX.Y.Z`) and creates a GitHub Release. Configure a personal access token (`RELEASE_PLEASE_TOKEN`) with `contents:write` permissions in the repository secrets so the tag push triggers downstream workflows.
 - Tag pushes (`v*`) run the cargo-dist workflow, producing `x86_64-unknown-linux-musl` archives in `target/dist` and uploading them to the GitHub Release alongside checksums.
 - To dry-run the pipeline locally, install `cargo-dist` and execute `cargo dist plan`.
+
+Forcing a specific version:
+- Add a commit included in the next release with the footer `release-as: X.Y.Z` (for example, commit message body contains `release-as: 0.2.3`). release-please will set Cargo.toml, manifest, the tag and Release to that version.

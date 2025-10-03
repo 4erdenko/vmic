@@ -19,6 +19,7 @@
 - Release tagging is handled by release-please; ensure commits follow Conventional Commit style and keep the release PR green.
 - Configure a repository secret `RELEASE_PLEASE_TOKEN` (PAT with `contents:write`) so release-please pushes tags that trigger downstream workflows.
 - cargo-dist builds, packages, and uploads `x86_64-unknown-linux-musl` archives on tag pushes (`v*`) via `.github/workflows/release.yml`.
+- To force a specific version, add a commit with footer `release-as: X.Y.Z` (e.g., `chore: prepare release\n\nrelease-as: 0.2.3`). release-please will use that exact version in the release PR and tag.
 
 ## Coding Style & Naming Conventions
 - Rust 2024 edition, enforced via `cargo fmt`; run before submitting patches.
