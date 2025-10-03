@@ -12,6 +12,7 @@
 - `cargo run -- --format json` — runs the CLI locally and prints a JSON report.
 - `cargo test --workspace` — executes all tests across the workspace modules.
 - `cargo clippy --workspace --all-targets -- -D warnings` — run alongside linting and tests; treat every warning as a must-fix before submitting patches.
+- `dist plan` — ensure the release pipeline stays green whenever templates, packaging metadata, or release automation change.
 - `rustup target add x86_64-unknown-linux-musl` — one-time command to enable musl builds.
 
 ## Release Automation
