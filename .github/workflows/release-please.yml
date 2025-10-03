@@ -5,6 +5,15 @@ on:
     branches:
       - master
   workflow_dispatch:
+    inputs:
+      version:
+        description: "Force release version (e.g., 0.2.3)"
+        required: false
+        type: string
+
+concurrency:
+  group: rp-${{ github.ref }}
+  cancel-in-progress: true
 
 permissions:
   contents: write
@@ -13,9 +22,14 @@ permissions:
 jobs:
   release-please:
     runs-on: ubuntu-latest
+    outputs:
+      vmic_release_created: ${{ steps.rp.outputs['vmic-cli--release_created'] }}
+      vmic_tag: ${{ steps.rp.outputs['vmic-cli--tag_name'] }}
     steps:
       - uses: googleapis/release-please-action@v4
+        id: rp
         with:
           token: ${{ secrets.RELEASE_PLEASE_TOKEN }}
           config-file: .github/release-please-config.json
           manifest-file: .release-please-manifest.json
+          release-as: ${{ inputs.version }}
