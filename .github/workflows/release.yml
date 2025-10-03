@@ -31,7 +31,7 @@ jobs:
         run: cargo install cargo-dist --locked --version 0.30.0
 
       - name: Build release artifacts with cargo-dist
-        run: cargo dist build --tag "${GITHUB_REF_NAME}"
+        run: dist build --tag "${GITHUB_REF_NAME}"
 
       - name: Show artifacts
         run: ls -lah target/dist
