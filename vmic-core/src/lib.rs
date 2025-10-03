@@ -185,8 +185,8 @@ mod health {
     impl Default for DigestThresholds {
         fn default() -> Self {
             Self {
-                disk_warning: 0.80,
-                disk_critical: 0.90,
+                disk_warning: 0.90,
+                disk_critical: 0.95,
                 memory_warning: 0.10,
                 memory_critical: 0.05,
             }
@@ -1667,6 +1667,15 @@ mod tests {
     use mod_sar as _;
     use mod_services as _;
     use mod_users as _;
+
+    #[test]
+    fn default_digest_thresholds_match_updated_values() {
+        let thresholds = DigestThresholds::default();
+        assert_eq!(thresholds.disk_warning, 0.90);
+        assert_eq!(thresholds.disk_critical, 0.95);
+        assert_eq!(thresholds.memory_warning, 0.10);
+        assert_eq!(thresholds.memory_critical, 0.05);
+    }
 
     #[test]
     fn collect_report_returns_sections() {
