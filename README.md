@@ -2,6 +2,60 @@
 
 The `vmic` binary produces system reports from the registered collectors in this workspace.  Reports can be rendered in Markdown, JSON, and HTML, and the CLI exposes options to tune time ranges, thresholds, and output locations.
 
+## Quick start
+
+- Build a static Linux binary (musl):
+  - One-time: `rustup target add x86_64-unknown-linux-musl`
+  - Build: `cargo build --release`
+  - Binary: `target/x86_64-unknown-linux-musl/release/vmic`
+- Run locally and print JSON: `cargo run -- --format json`
+- Run with multiple formats to files: `vmic --format markdown,html --output-dir ./reports`
+
+The workspace targets Rust 2024 (rustc 1.90+). Static linking is enforced via `.cargo/config.toml`.
+
+## Supported collectors
+
+VMIC ships modular collectors that each contribute a section to the report. Most degrade gracefully (status `degraded`) when a tool or permission is missing.
+
+- `os` — Operating System: `/etc/os-release`, kernel release/version and machine.
+- `proc` — Processes and Resources: load averages, host/cgroup memory, swap, zram, top processes.
+- `storage` — Storage Overview: mounted filesystems, inode usage, Docker data-root summary, largest directories/logs.
+- `network` — Network Overview: interface counters, listening sockets, process/container association and insights.
+- `services` — System Services: `systemd` unit status summary (`systemctl`).
+- `users` — Local Users: `/etc/passwd` and privileged group membership.
+- `cron` — Scheduled Jobs: `/etc/crontab` and `/etc/cron.d` entries.
+- `journal` — systemd journal: recent events (`journalctl`). Enabled by default through the `journal` feature.
+- `docker` — Docker Containers: engine info, containers, metrics and storage breakdown (uses `bollard`).
+- `containers` — Alternative Containers: presence and versions of `podman`, `nerdctl`, or `ctr`.
+- `sar` — Sysstat Metrics: CPU averages from `sar -u 1 1`.
+
+Notes and prerequisites:
+- `journal` typically requires root or membership in the `systemd-journal` group.
+- `services` requires `systemctl` (systemd-based hosts).
+- `docker` requires access to the Docker daemon (root or `docker` group). When unavailable, the section degrades and reports an unavailable engine.
+- `sar` requires the `sysstat` package; otherwise the section degrades with an explanatory note.
+
+## Build from source
+
+Static builds are the default:
+
+```bash
+rustup target add x86_64-unknown-linux-musl
+cargo build --release
+# resulting binary:
+./target/x86_64-unknown-linux-musl/release/vmic
+```
+
+Developer commands:
+- `cargo test --workspace` — run all unit tests.
+- `cargo clippy --workspace --all-targets -- -D warnings` — lint; treat warnings as errors.
+- `cargo fmt` — format code (Rust 2024 edition).
+- `cargo run -- --format json` — execute CLI locally.
+
+## JSON schema
+
+The JSON output conforms to `schemas/vmic-report.schema.json` and includes a top-level `metadata.health_digest` with an overall severity and individual findings.
+
 ## Usage
 
 ```bash
@@ -33,6 +87,11 @@ vmic --format markdown,html --output-dir ./reports
 ```
 
 Produces `reports/vmic-report-<timestamp>.md` and `.html`, and prints a confirmation for each file.
+
+## HTML and Markdown templates
+
+- Markdown is rendered with `templates/report.md` (Askama) and includes a critical health digest followed by JSON sections.
+- HTML uses `templates/report.html` and renders a dashboard with a sticky header, table of contents, status coloring, and per-section summaries, notes, key-values, tables, and lists. HTML is always written to a file.
 
 ## Time filtering
 
@@ -72,6 +131,15 @@ Example:
 VMIC_DIGEST_DISK_WARNING=80 VMIC_DIGEST_DISK_CRITICAL=90 \
   vmic --format markdown,json --output-dir ./reports
 ```
+
+## Feature flags
+
+- `journal` — enables the journald collector (default). To build without it: `cargo build --no-default-features`.
+
+## Permissions and platforms
+
+- Linux hosts are supported (uses `/proc`, `systemd` tools, and musl static linking).
+- Some collectors require elevated permissions (e.g., `journal`, `docker`). When permissions are insufficient, sections degrade with explanatory notes.
 
 ## Exit status
 
