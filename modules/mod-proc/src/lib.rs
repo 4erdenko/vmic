@@ -271,7 +271,7 @@ fn gather_process_usage() -> Result<Vec<ProcessUsage>> {
 
         let cpu_percent = calculate_average_cpu_percent(&stat, uptime, ticks_per_second);
         let memory_bytes = if stat.rss > 0 {
-            Some((stat.rss as u64).saturating_mul(page_size))
+            Some(stat.rss.saturating_mul(page_size))
         } else {
             None
         };
@@ -656,7 +656,7 @@ fn ascii_sparkline(values: &[f64]) -> String {
         .fold(0.0_f64, |acc, value| acc.max(value.max(0.0)));
 
     if max_value <= f64::EPSILON {
-        return std::iter::repeat('_').take(values.len()).collect();
+        return "_".repeat(values.len());
     }
 
     values
@@ -734,9 +734,9 @@ fn section_from_snapshot(snapshot: &ProcSnapshot) -> Section {
             }
         },
         "psi": snapshot.psi.as_ref().map(|psi| json!({
-            "cpu": psi.cpu.as_ref().map(|res| psi_resource_to_value(res)),
-            "memory": psi.memory.as_ref().map(|res| psi_resource_to_value(res)),
-            "io": psi.io.as_ref().map(|res| psi_resource_to_value(res)),
+            "cpu": psi.cpu.as_ref().map(psi_resource_to_value),
+            "memory": psi.memory.as_ref().map(psi_resource_to_value),
+            "io": psi.io.as_ref().map(psi_resource_to_value),
         })),
         "top_processes": snapshot.top_processes.as_ref().map(|top| json!({
             "by_cpu": top

@@ -220,7 +220,7 @@ fn top_counts(map: HashMap<String, u64>) -> Vec<CountEntry> {
         .collect()
 }
 
-fn extract_after<'a>(message: &'a str, marker: &str) -> Option<String> {
+fn extract_after(message: &str, marker: &str) -> Option<String> {
     message
         .split(marker)
         .nth(1)

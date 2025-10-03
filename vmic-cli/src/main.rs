@@ -122,10 +122,7 @@ fn main() -> Result<()> {
         None
     };
 
-    let timestamp = report
-        .metadata
-        .generated_at_utc()
-        .unwrap_or_else(|| Utc::now());
+    let timestamp = report.metadata.generated_at_utc().unwrap_or_else(Utc::now);
     let base_name = format!("vmic-report-{}", timestamp.format("%Y-%m-%dT%H-%M-%SZ"));
 
     for format in formats {

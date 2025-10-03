@@ -323,11 +323,9 @@ fn collect_socket_process_map() -> Result<HashMap<u64, Vec<SocketProcessInfo>>> 
         };
 
         if let Ok(fds) = proc.fd() {
-            for fd in fds {
-                if let Ok(fd) = fd {
-                    if let process::FDTarget::Socket(inode) = fd.target {
-                        map.entry(inode).or_default().push(processes_entry.clone());
-                    }
+            for fd in fds.into_iter().flatten() {
+                if let process::FDTarget::Socket(inode) = fd.target {
+                    map.entry(inode).or_default().push(processes_entry.clone());
                 }
             }
         }

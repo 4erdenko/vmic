@@ -763,13 +763,14 @@ mod client_feature_tests {
             mounts: Vec::new(),
         };
 
-        let mut details = ContainerDetails::default();
-        details.health_status = Some("unhealthy".into());
-        details.health_failing_streak = Some(3);
-        details.restart_count = Some(4);
-        details.size_rw_bytes = Some(1_024);
-        details.size_root_fs_bytes = Some(4_096);
-        details.mounts = vec![ContainerMountInfo::default()];
+        let details = ContainerDetails {
+            health_status: Some("unhealthy".into()),
+            health_failing_streak: Some(3),
+            restart_count: Some(4),
+            size_rw_bytes: Some(1_024),
+            size_root_fs_bytes: Some(4_096),
+            mounts: vec![ContainerMountInfo::default()],
+        };
 
         info.apply_details(details);
 

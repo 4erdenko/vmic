@@ -11,6 +11,7 @@
 - `cargo build --release` — produces a static `target/x86_64-unknown-linux-musl/release/vmic` binary.
 - `cargo run -- --format json` — runs the CLI locally and prints a JSON report.
 - `cargo test --workspace` — executes all tests across the workspace modules.
+- `cargo clippy --workspace --all-targets -- -D warnings` — run alongside linting and tests; treat every warning as a must-fix before submitting patches.
 - `rustup target add x86_64-unknown-linux-musl` — one-time command to enable musl builds.
 
 ## Coding Style & Naming Conventions
@@ -40,4 +41,3 @@
 
 - Cross-check progress against `ARCHITECTURE.md` after each change; mark completed/ongoing items there.
 - Propose and record any new scope additions in `ARCHITECTURE.md` before implementation.
-

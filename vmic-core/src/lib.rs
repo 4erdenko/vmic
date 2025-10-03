@@ -117,9 +117,10 @@ mod health {
     use serde::Serialize;
     use serde_json::Value;
 
-    #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, PartialOrd, Ord)]
+    #[derive(Debug, Clone, Copy, Serialize, PartialEq, Eq, PartialOrd, Ord, Default)]
     #[serde(rename_all = "lowercase")]
     pub enum Severity {
+        #[default]
         Info,
         Warning,
         Critical,
@@ -140,12 +141,6 @@ mod health {
                 Severity::Warning => "Warning",
                 Severity::Critical => "Critical",
             }
-        }
-    }
-
-    impl Default for Severity {
-        fn default() -> Self {
-            Severity::Info
         }
     }
 
@@ -928,7 +923,7 @@ mod render {
                     let inode_ratio = mount
                         .get("inodes_usage_ratio")
                         .and_then(Value::as_f64)
-                        .map(|ratio| format_percent(ratio))
+                        .map(format_percent)
                         .unwrap_or_else(|| "n/a".to_string());
 
                     Some((
