@@ -14,6 +14,10 @@ permissions:
 jobs:
   dist:
     runs-on: ubuntu-latest
+    env:
+      CARGO_TERM_COLOR: always
+      RUSTC_WRAPPER: sccache
+      SCCACHE_GHA_ENABLED: "true"
     steps:
       - name: Checkout
         uses: actions/checkout@v5
@@ -40,10 +44,11 @@ jobs:
           tool: cargo-dist@0.30.0
 
       - name: Build release artifacts with cargo-dist
-        env:
-          RUSTC_WRAPPER: sccache
-          SCCACHE_GHA_ENABLED: "true"
-        run: dist build --artifacts=local --tag "${GITHUB_REF_NAME}" --target x86_64-unknown-linux-musl
+        run: |
+          dist build \
+            --artifacts=local \
+            --tag "${GITHUB_REF_NAME}" \
+            --target x86_64-unknown-linux-musl
 
       - name: Show artifacts
         run: ls -lah target/distrib
@@ -51,12 +56,26 @@ jobs:
       - name: Ensure GitHub Release exists
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
-          find target/distrib -maxdepth 1 -type f -print0 \
-            | xargs -0 gh release upload "${GITHUB_REF_NAME}" --clobber
+          set -euo pipefail
+          if ! gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
+            gh release create "${GITHUB_REF_NAME}" \
+              --title "${GITHUB_REF_NAME}" \
+              --notes "Automated release."
+          fi
+        # gh release create/view см. мануал :contentReference[oaicite:9]{index=9}
 
-      - name: Upload artifacts to GitHub Release
+      - name: Upload artifacts to GitHub Release (from dist manifest)
         env:
-          GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: find target/dist -type f -print0 | xargs -0 gh release upload "${GITHUB_REF_NAME}" --clobber
+          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
+        run: |
+          set -euo pipefail
+          # Получаем список корректных файлов из манифеста
+          dist manifest --artifacts=local --tag "${GITHUB_REF_NAME}" --output-format=json \
+            | jq -r '.upload_files[]' \
+            | while IFS= read -r path; do
+                # upload_files уже исключает мусорные файлы (например, timestamp), см. schema
+                if [ -f "$path" ]; then
+                  gh release upload "${GITHUB_REF_NAME}" "$path" --clobber
+                fi
+              done
