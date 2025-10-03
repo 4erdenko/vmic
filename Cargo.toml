@@ -23,7 +23,7 @@ default-members = ["vmic-cli"]
 edition = "2024"
 rust-version = "1.85"
 license = "MIT OR Apache-2.0"
-repository = "https://example.com/valentin/vmic"
+repository = "https://github.com/4erdenko/vmic"
 
 [workspace.dependencies]
 anyhow = "1.0.100"
