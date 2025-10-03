@@ -11,7 +11,7 @@ VMIC is a modular Rust tool that produces human- and machine-readable system rep
 
 ## 2. Workspace Structure
 - ✅ Cargo workspace with shared profiles, lints, and dependencies (`Cargo.toml`, `.cargo/config.toml`).
-- ✅ Workspace uses Rust 2024 edition, resolver = "3", `rust-version = 1.85`, and shared `[workspace.dependencies]` (`anyhow`, `serde`, `serde_json`, `clap`, `askama`, `inventory`, `procfs`, `etc-os-release`, `rustix`, `tokio`/`bollard` behind features).
+ - ✅ Workspace uses Rust 2024 edition, resolver = "3", `rust-version = 1.90`, and shared `[workspace.dependencies]` (`anyhow`, `serde`, `serde_json`, `clap`, `askama`, `inventory`, `procfs`, `etc-os-release`, `rustix`, `tokio`/`bollard` behind features). Toolchain pinned via `rust-toolchain.toml` to `1.90.0` with `rustfmt`/`clippy` and musl targets.
 - ✅ Crates: `vmic-cli` (binary), `vmic-core` (orchestration and rendering), `vmic-sdk` (collector SDK), `modules/*` (feature crates), `templates/` (render assets).
 
 ## 3. SDK and Collector Registry
@@ -56,6 +56,7 @@ VMIC is a modular Rust tool that produces human- and machine-readable system rep
 - ✅ Release profile tuned for size (`opt-level = "z"`, `lto = "thin"`, `panic = "abort"`, `strip = "symbols"`).
 - ✅ Formatting via `cargo fmt`; unit tests per crate; smoke tests via `cargo run` documented.
 - ✅ Release binary smoke-tested via `cargo build --release` followed by running `vmic --format json`.
+- ⚙️ CI optimizations: dependency cache via `Swatinem/rust-cache@v2`, prebuilt `cargo-dist` install with `taiki-e/install-action@v2`, and compilation cache via `sccache` (`Mozilla-Actions/sccache-action@v0.0.3` with `RUSTC_WRAPPER=sccache`).
 - ⚙️ Release automation via release-please (workspace driven off `vmic-cli` manifest, ignores legacy merge commits, PAT-backed release PRs) and cargo-dist (musl artifacts on tag pushes); CI secrets pending (`RELEASE_PLEASE_TOKEN`).
 
 ## 8. Future Enhancements

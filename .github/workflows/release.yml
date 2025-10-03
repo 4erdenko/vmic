@@ -16,26 +16,34 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - name: Checkout
-        uses: actions/checkout@v4
+        uses: actions/checkout@v5
         with:
           fetch-depth: 0
 
       - name: Install Rust
-        uses: dtolnay/rust-toolchain@stable
+        uses: dtolnay/rust-toolchain@1.90
         with:
           targets: x86_64-unknown-linux-musl
 
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
+      - name: Set up sccache
+        uses: Mozilla-Actions/sccache-action@v0.0.9
+
       - name: Install system dependencies (musl)
         run: sudo apt-get update && sudo apt-get install -y musl-tools
 
       - name: Install cargo-dist
-        run: cargo install cargo-dist --locked --version 0.30.0
+        uses: taiki-e/install-action@v2
+        with:
+          tool: cargo-dist@0.30.0
 
       - name: Build release artifacts with cargo-dist
-        run: dist build --tag "${GITHUB_REF_NAME}" --target x86_64-unknown-linux-musl
+        env:
+          RUSTC_WRAPPER: sccache
+          SCCACHE_GHA_ENABLED: "true"
+        run: dist build --artifacts=local --tag "${GITHUB_REF_NAME}" --target x86_64-unknown-linux-musl
 
       - name: Show artifacts
         run: ls -lah target/dist
