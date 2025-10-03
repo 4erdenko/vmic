@@ -28,11 +28,14 @@ jobs:
       - name: Cache cargo
         uses: Swatinem/rust-cache@v2
 
+      - name: Install system dependencies (musl)
+        run: sudo apt-get update && sudo apt-get install -y musl-tools
+
       - name: Install cargo-dist
         run: cargo install cargo-dist --locked --version 0.30.0
 
       - name: Build release artifacts with cargo-dist
-        run: dist build --tag "${GITHUB_REF_NAME}"
+        run: dist build --tag "${GITHUB_REF_NAME}" --target x86_64-unknown-linux-musl
 
       - name: Show artifacts
         run: ls -lah target/dist
