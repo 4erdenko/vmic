@@ -1,11 +1,13 @@
 name: Release (cargo-dist)
 
 on:
-  push:
-    tags:
-      - "v*"
-      - "vmic-v*"
+  release:
+    types: [published]
   workflow_dispatch:
+    inputs:
+      tag:
+        description: "Git tag to rebuild/reupload"
+        required: true
 
 permissions:
   contents: write
@@ -13,6 +15,7 @@ permissions:
 
 jobs:
   dist:
+    if: ${{ github.event_name != 'release' || github.event.release.draft == false }}
     runs-on: ubuntu-latest
     env:
       CARGO_TERM_COLOR: always
@@ -36,7 +39,21 @@ jobs:
         uses: Mozilla-Actions/sccache-action@v0.0.9
 
       - name: Install system dependencies (musl)
-        run: sudo apt-get update && sudo apt-get install -y musl-tools
+        run: sudo apt-get update && sudo apt-get install -y musl-tools jq
+
+      - name: Determine release tag
+        run: |
+          set -euo pipefail
+          if [ "${{ github.event_name }}" = "release" ]; then
+            echo "RELEASE_TAG=${{ github.event.release.tag_name }}" >> "$GITHUB_ENV"
+          else
+            if [ -z "${{ github.event.inputs.tag }}" ]; then
+              echo "Manual dispatch requires the 'tag' input" >&2
+              exit 1
+            fi
+            echo "RELEASE_TAG=${{ github.event.inputs.tag }}" >> "$GITHUB_ENV"
+          fi
+
 
       - name: Install cargo-dist
         uses: taiki-e/install-action@v2
@@ -47,35 +64,21 @@ jobs:
         run: |
           dist build \
             --artifacts=local \
-            --tag "${GITHUB_REF_NAME}" \
+            --tag "$RELEASE_TAG" \
             --target x86_64-unknown-linux-musl
 
       - name: Show artifacts
         run: ls -lah target/distrib
-
-      - name: Ensure GitHub Release exists
-        env:
-          GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
-        run: |
-          set -euo pipefail
-          if ! gh release view "${GITHUB_REF_NAME}" >/dev/null 2>&1; then
-            gh release create "${GITHUB_REF_NAME}" \
-              --title "${GITHUB_REF_NAME}" \
-              --notes "Automated release."
-          fi
-        # gh release create/view см. мануал :contentReference[oaicite:9]{index=9}
 
       - name: Upload artifacts to GitHub Release (from dist manifest)
         env:
           GH_TOKEN: ${{ secrets.GITHUB_TOKEN }}
         run: |
           set -euo pipefail
-          # Получаем список корректных файлов из манифеста
-          dist manifest --artifacts=local --tag "${GITHUB_REF_NAME}" --output-format=json \
+          dist manifest --artifacts=local --tag "$RELEASE_TAG" --output-format=json \
             | jq -r '.upload_files[]' \
             | while IFS= read -r path; do
-                # upload_files уже исключает мусорные файлы (например, timestamp), см. schema
                 if [ -f "$path" ]; then
-                  gh release upload "${GITHUB_REF_NAME}" "$path" --clobber
+                  gh release upload "$RELEASE_TAG" "$path" --clobber
                 fi
               done

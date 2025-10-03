@@ -57,7 +57,7 @@ VMIC is a modular Rust tool that produces human- and machine-readable system rep
 - ✅ Formatting via `cargo fmt`; unit tests per crate; smoke tests via `cargo run` documented.
 - ✅ Release binary smoke-tested via `cargo build --release` followed by running `vmic --format json`.
 - ⚙️ CI optimizations: dependency cache via `Swatinem/rust-cache@v2`, prebuilt `cargo-dist` install with `taiki-e/install-action@v2`, and compilation cache via `sccache` (`Mozilla-Actions/sccache-action@v0.0.3` with `RUSTC_WRAPPER=sccache`).
-- ⚙️ Release automation via release-please (workspace driven off `vmic-cli` manifest, ignores legacy merge commits, PAT-backed release PRs) and cargo-dist (musl artifacts on tag pushes plus bare `vmic` binary extra-artifact uploads); CI secrets pending (`RELEASE_PLEASE_TOKEN`).
+- ⚙️ Release automation via release-please (workspace driven off `vmic-cli` manifest, ignores legacy merge commits, PAT-backed release PRs) и cargo-dist (срабатывает по событию GitHub Release и прикрепляет musl-артефакты, включая голый `vmic` extra-artifact); CI secrets pending (`RELEASE_PLEASE_TOKEN`).
 
 ## 8. Future Enhancements
 - ✅ Add HTML report template and aggregated HTML/JSON artifact generation.
