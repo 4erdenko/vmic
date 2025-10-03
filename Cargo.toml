@@ -46,6 +46,16 @@ unix-archive = ".tar.gz"
 checksum = "sha256"
 pr-run-mode = "plan"
 
+[[workspace.metadata.dist.extra-artifacts]]
+build = [
+  "bash",
+  "-euo",
+  "pipefail",
+  "-c",
+  "mkdir -p target/distrib && cp target/x86_64-unknown-linux-musl/dist/vmic target/distrib/vmic",
+]
+artifacts = ["target/distrib/vmic"]
+
 [workspace.metadata.dist.dependencies.apt]
 musl-tools = { targets = ["x86_64-unknown-linux-musl"] }
 
