@@ -382,6 +382,16 @@ mod health {
             return;
         };
 
+        fn classify_memory_ratio(ratio: f64, thresholds: &DigestThresholds) -> Option<Severity> {
+            if ratio <= thresholds.memory_critical {
+                Some(Severity::Critical)
+            } else if ratio <= thresholds.memory_warning {
+                Some(Severity::Warning)
+            } else {
+                None
+            }
+        }
+
         if let Some(host) = memory.get("host").and_then(Value::as_object) {
             let total = host.get("total_bytes").and_then(Value::as_u64).unwrap_or(0);
             let available = host
@@ -391,13 +401,7 @@ mod health {
 
             if total > 0 {
                 let ratio = available as f64 / total as f64;
-                let severity = if ratio <= thresholds.memory_critical {
-                    Some(Severity::Critical)
-                } else if ratio <= thresholds.memory_warning {
-                    Some(Severity::Warning)
-                } else {
-                    None
-                };
+                let severity = classify_memory_ratio(ratio, thresholds);
 
                 if let Some(severity) = severity {
                     let available_gib = available as f64 / (1024.0 * 1024.0 * 1024.0);
@@ -428,13 +432,7 @@ mod health {
                     (limit - usage) as f64 / limit as f64
                 };
 
-                let severity = if remaining_ratio <= thresholds.memory_critical {
-                    Some(Severity::Critical)
-                } else if remaining_ratio <= thresholds.memory_warning {
-                    Some(Severity::Warning)
-                } else {
-                    None
-                };
+                let severity = classify_memory_ratio(remaining_ratio, thresholds);
 
                 if let Some(severity) = severity {
                     let remaining_gib = if usage >= limit {
@@ -1036,23 +1034,28 @@ mod render {
     }
 
     fn populate_services(view: &mut SectionView, body: &Value) {
-        if let Some(running) = body.get("running").and_then(Value::as_array) {
-            let mut rows = Vec::new();
-            for entry in running.iter().take(12) {
-                let unit = entry
-                    .get("unit")
-                    .and_then(Value::as_str)
-                    .unwrap_or("(unknown)");
-                let description = entry
-                    .get("description")
-                    .and_then(Value::as_str)
-                    .unwrap_or("-");
-                let state = format_service_state(entry);
-                rows.push(vec![unit.to_string(), description.to_string(), state]);
-            }
+        fn add_service_table(view: &mut SectionView, entries: &[Value], title: String) {
+            const MAX_ROWS: usize = 12;
+            let rows: Vec<Vec<String>> = entries
+                .iter()
+                .take(MAX_ROWS)
+                .map(|entry| {
+                    let unit = entry
+                        .get("unit")
+                        .and_then(Value::as_str)
+                        .unwrap_or("(unknown)");
+                    let description = entry
+                        .get("description")
+                        .and_then(Value::as_str)
+                        .unwrap_or("-");
+                    let state = format_service_state(entry);
+                    vec![unit.to_string(), description.to_string(), state]
+                })
+                .collect();
+
             if !rows.is_empty() {
                 view.add_table(TableView {
-                    title: Some(format!("Running Services ({} total)", running.len())),
+                    title: Some(title),
                     headers: vec![
                         "Unit".to_string(),
                         "Description".to_string(),
@@ -1064,32 +1067,16 @@ mod render {
             }
         }
 
+        if let Some(running) = body.get("running").and_then(Value::as_array) {
+            add_service_table(
+                view,
+                running,
+                format!("Running Services ({} total)", running.len()),
+            );
+        }
+
         if let Some(failed) = body.get("failed").and_then(Value::as_array) {
-            let mut rows = Vec::new();
-            for entry in failed.iter().take(12) {
-                let unit = entry
-                    .get("unit")
-                    .and_then(Value::as_str)
-                    .unwrap_or("(unknown)");
-                let description = entry
-                    .get("description")
-                    .and_then(Value::as_str)
-                    .unwrap_or("-");
-                let state = format_service_state(entry);
-                rows.push(vec![unit.to_string(), description.to_string(), state]);
-            }
-            if !rows.is_empty() {
-                view.add_table(TableView {
-                    title: Some("Failed Services".to_string()),
-                    headers: vec![
-                        "Unit".to_string(),
-                        "Description".to_string(),
-                        "State".to_string(),
-                    ],
-                    rows,
-                    row_classes: Vec::new(),
-                });
-            }
+            add_service_table(view, failed, "Failed Services".to_string());
         }
     }
 
@@ -1232,6 +1219,25 @@ mod render {
     }
 
     fn populate_journal(view: &mut SectionView, body: &Value) {
+        fn add_top_list(view: &mut SectionView, entries: &[Value], title: &str) {
+            let items: Vec<String> = entries
+                .iter()
+                .take(5)
+                .map(|entry| {
+                    let name = entry.get("name").and_then(Value::as_str).unwrap_or("-");
+                    let count = entry.get("count").and_then(Value::as_u64).unwrap_or(0);
+                    format!("{name} ({count})")
+                })
+                .collect();
+
+            if !items.is_empty() {
+                view.add_list(ListView {
+                    title: Some(title.to_string()),
+                    items,
+                });
+            }
+        }
+
         if let Some(summary) = body.get("ssh_summary").and_then(Value::as_object) {
             let invalid = summary
                 .get("invalid_user_count")
@@ -1245,39 +1251,11 @@ mod render {
             view.add_kv("SSH auth failures", failures.to_string());
 
             if let Some(hosts) = summary.get("top_hosts").and_then(Value::as_array) {
-                if !hosts.is_empty() {
-                    let items: Vec<String> = hosts
-                        .iter()
-                        .take(5)
-                        .map(|entry| {
-                            let name = entry.get("name").and_then(Value::as_str).unwrap_or("-");
-                            let count = entry.get("count").and_then(Value::as_u64).unwrap_or(0);
-                            format!("{name} ({count})")
-                        })
-                        .collect();
-                    view.add_list(ListView {
-                        title: Some("Top SSH source IPs".to_string()),
-                        items,
-                    });
-                }
+                add_top_list(view, hosts, "Top SSH source IPs");
             }
 
             if let Some(users) = summary.get("top_usernames").and_then(Value::as_array) {
-                if !users.is_empty() {
-                    let items: Vec<String> = users
-                        .iter()
-                        .take(5)
-                        .map(|entry| {
-                            let name = entry.get("name").and_then(Value::as_str).unwrap_or("-");
-                            let count = entry.get("count").and_then(Value::as_u64).unwrap_or(0);
-                            format!("{name} ({count})")
-                        })
-                        .collect();
-                    view.add_list(ListView {
-                        title: Some("Top SSH usernames".to_string()),
-                        items,
-                    });
-                }
+                add_top_list(view, users, "Top SSH usernames");
             }
         }
 
@@ -1309,8 +1287,8 @@ mod render {
     }
 
     fn populate_cron(view: &mut SectionView, body: &Value) {
-        if let Some(system) = body.get("system_crontab").and_then(Value::as_array) {
-            let rows: Vec<Vec<String>> = system
+        fn cron_rows(entries: &[Value]) -> Vec<Vec<String>> {
+            entries
                 .iter()
                 .map(|entry| {
                     vec![
@@ -1331,7 +1309,11 @@ mod render {
                             .to_string(),
                     ]
                 })
-                .collect();
+                .collect()
+        }
+
+        if let Some(system) = body.get("system_crontab").and_then(Value::as_array) {
+            let rows = cron_rows(system);
             if !rows.is_empty() {
                 view.add_table(TableView {
                     title: Some("System crontab".to_string()),
@@ -1353,28 +1335,7 @@ mod render {
                     .and_then(Value::as_str)
                     .unwrap_or("/etc/cron.d");
                 if let Some(entries) = file.get("entries").and_then(Value::as_array) {
-                    let rows: Vec<Vec<String>> = entries
-                        .iter()
-                        .map(|entry| {
-                            vec![
-                                entry
-                                    .get("schedule")
-                                    .and_then(Value::as_str)
-                                    .unwrap_or("?")
-                                    .to_string(),
-                                entry
-                                    .get("user")
-                                    .and_then(Value::as_str)
-                                    .unwrap_or("root")
-                                    .to_string(),
-                                entry
-                                    .get("command")
-                                    .and_then(Value::as_str)
-                                    .unwrap_or("?")
-                                    .to_string(),
-                            ]
-                        })
-                        .collect();
+                    let rows = cron_rows(entries);
                     if !rows.is_empty() {
                         view.add_table(TableView {
                             title: Some(path.to_string()),
@@ -1653,15 +1614,11 @@ mod tests {
     use vmic_sdk::SectionStatus;
 
     // Link modules so their collectors register during tests.
-    use mod_containers as _;
-    use mod_cron as _;
-    use mod_docker as _;
-    use mod_journal as _;
-    use mod_os as _;
-    use mod_proc as _;
-    use mod_sar as _;
-    use mod_services as _;
-    use mod_users as _;
+    #[allow(unused_imports)]
+    use {
+        mod_containers as _, mod_cron as _, mod_docker as _, mod_journal as _, mod_os as _,
+        mod_proc as _, mod_sar as _, mod_services as _, mod_users as _,
+    };
 
     #[test]
     fn default_digest_thresholds_match_updated_values() {
